@@ -1,0 +1,28 @@
+PicSteps 1.0.0 - Versión portátil
+================================
+
+1. Descomprime este ZIP en una carpeta.
+2. Ejecuta PicSteps.exe.
+3. Opcional: crea un acceso directo a PicSteps.exe en el escritorio.
+
+No requiere Python ni instalar dependencias. Funciona en Windows 10/11 de 64 bits.
+
+Uso básico
+----------
+- Abre una carpeta desde el árbol de la izquierda o escribiendo su ruta.
+- Arrastra las miniaturas para ordenar los pasos; se renumeran al soltar.
+- Ctrl+Z deshace el último renombrado de la carpeta actual.
+- F11 abre la presentación desde la imagen seleccionada.
+- Supr envía a la Papelera los archivos seleccionados o la carpeta del árbol.
+
+Datos y privacidad
+------------------
+- La aplicación no envía fotos ni datos a Internet.
+- Ajustes y registro: %LOCALAPPDATA%\PicSteps
+- Giros pendientes: %LOCALAPPDATA%\PicSteps\rotations.json
+
+Nota
+----
+El ejecutable no está firmado digitalmente. Windows SmartScreen puede mostrar
+una advertencia la primera vez; usa "Más información" y "Ejecutar de todas formas"
+si confías en el archivo.
