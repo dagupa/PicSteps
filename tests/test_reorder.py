@@ -59,12 +59,14 @@ class DragReorderTests(unittest.TestCase):
         self.app.processEvents()
         shutil.rmtree(self.temp_dir, ignore_errors=True)
 
-    def _drop_before_row(self, source: str, target_row: int) -> None:
+    def _drop_before_row(self, sources: str | list[str], target_row: int) -> None:
+        if isinstance(sources, str):
+            sources = [sources]
         rect = self.view.visualRect(self.model.index(target_row, 0))
         self.assertTrue(rect.isValid())
         position = QPointF(rect.left() + 2, rect.center().y())
         mime = QMimeData()
-        mime.setData(MIME_TYPE, json.dumps([source]).encode("utf-8"))
+        mime.setData(MIME_TYPE, json.dumps(sources).encode("utf-8"))
         event = QDropEvent(
             position,
             Qt.DropAction.MoveAction,
@@ -112,6 +114,36 @@ class DragReorderTests(unittest.TestCase):
             sorted(os.listdir(self.folder)),
             [f"{number:02d}_foto.jpg" for number in range(1, 8)],
         )
+
+    def test_drop_block_before_third_keeps_internal_order(self) -> None:
+        self._drop_before_row([self.paths[5], self.paths[6]], 2)
+
+        order = self.model.image_paths()
+        self.assertEqual(
+            [os.path.basename(path) for path in order],
+            [
+                "01_foto.jpg",
+                "02_foto.jpg",
+                "06_foto.jpg",
+                "07_foto.jpg",
+                "03_foto.jpg",
+                "04_foto.jpg",
+                "05_foto.jpg",
+            ],
+        )
+
+        moves = apply_rename_plan(build_rename_plan(order))
+        self.assertEqual(len(moves), 5)
+        expected_sizes = {
+            "03_foto.jpg": (26, 16),
+            "04_foto.jpg": (27, 17),
+            "05_foto.jpg": (23, 13),
+            "06_foto.jpg": (24, 14),
+            "07_foto.jpg": (25, 15),
+        }
+        for name, size in expected_sizes.items():
+            with Image.open(os.path.join(self.folder, name)) as image:
+                self.assertEqual(image.size, size)
 
 
 if __name__ == "__main__":

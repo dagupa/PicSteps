@@ -225,6 +225,22 @@ def _rename(source: str, target: str) -> None:
             delay = min(delay * 2, 0.2)
 
 
+def _replace(source: str, target: str) -> None:
+    """Reemplazo atómico con reintentos ante bloqueos transitorios de Windows."""
+    deadline = time.monotonic() + 1.5
+    delay = 0.02
+    while True:
+        try:
+            os.replace(source, target)
+            return
+        except OSError as exc:
+            transient = getattr(exc, "winerror", None) in (5, 32)
+            if not transient or time.monotonic() >= deadline:
+                raise
+            time.sleep(delay)
+            delay = min(delay * 2, 0.2)
+
+
 def validate_rename_plan(plan: Sequence[FileMove]) -> None:
     sources: set[str] = set()
     targets: set[str] = set()
@@ -484,7 +500,7 @@ def save_rotation(path: str, degrees: int, quality: int = 95) -> float:
         elif image_format == "PNG":
             kwargs.update(optimize=True)
         elif image_format == "WEBP":
-            kwargs.update(quality=quality, method=6)
+            kwargs.update(lossless=True, method=6)
         elif image_format == "TIFF":
             kwargs.update(compression="tiff_lzw")
         if exif_bytes:
@@ -500,7 +516,7 @@ def save_rotation(path: str, degrees: int, quality: int = 95) -> float:
         os.close(descriptor)
         try:
             rotated.save(temporary, format=image_format, **kwargs)
-            os.replace(temporary, path)
+            _replace(temporary, path)
         finally:
             if os.path.exists(temporary):
                 try:

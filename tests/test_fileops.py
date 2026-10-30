@@ -231,6 +231,25 @@ class RotationTests(unittest.TestCase):
             with Image.open(path) as image:
                 self.assertEqual(image.size, (40, 20))
 
+    def test_rotate_webp_is_lossless(self):
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / "foto.webp"
+            original = Image.new("RGB", (40, 20))
+            original.putdata(
+                [
+                    (index * 7 % 256, index * 13 % 256, index * 29 % 256)
+                    for index in range(40 * 20)
+                ]
+            )
+            original.save(path, lossless=True)
+            save_rotation(str(path), 90)
+            with Image.open(path) as image:
+                self.assertEqual(image.size, (20, 40))
+                self.assertEqual(
+                    image.convert("RGB").tobytes(),
+                    original.rotate(-90, expand=True).tobytes(),
+                )
+
 
 if __name__ == "__main__":
     unittest.main()
