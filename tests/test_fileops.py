@@ -4,6 +4,7 @@ import os
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 from PIL import Image
 
@@ -186,6 +187,31 @@ class RenameTests(unittest.TestCase):
         self.assertEqual(content.others, [])
         content_all = list_folder(str(self.folder), show_all=True)
         self.assertEqual([Path(p).name for p in content_all.others], ["nota.txt"])
+
+
+class RenameRetryTests(unittest.TestCase):
+    def test_transient_sharing_violation_is_retried(self):
+        with tempfile.TemporaryDirectory() as folder:
+            source = Path(folder) / "origen.jpg"
+            target = Path(folder) / "destino.jpg"
+            source.write_bytes(b"foto")
+            real_rename = os.rename
+            calls = []
+
+            def flaky_rename(src, dst):
+                calls.append((src, dst))
+                if len(calls) < 3:
+                    error = OSError(32, "archivo en uso")
+                    error.winerror = 32
+                    raise error
+                return real_rename(src, dst)
+
+            with mock.patch.object(fileops.os, "rename", side_effect=flaky_rename):
+                fileops._rename(str(source), str(target))
+
+            self.assertEqual(len(calls), 3)
+            self.assertTrue(target.exists())
+            self.assertFalse(source.exists())
 
 
 class RotationTests(unittest.TestCase):
