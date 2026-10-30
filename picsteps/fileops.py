@@ -206,8 +206,23 @@ def build_rename_plan(
 
 
 def _rename(source: str, target: str) -> None:
-    """Indirección para poder simular fallos en las pruebas."""
-    os.rename(source, target)
+    """Indirección para poder simular fallos en las pruebas.
+
+    En Windows un visor o el cargador de miniaturas puede mantener el archivo
+    abierto unos instantes. Se reintenta brevemente ante bloqueos transitorios.
+    """
+    deadline = time.monotonic() + 1.5
+    delay = 0.02
+    while True:
+        try:
+            os.rename(source, target)
+            return
+        except OSError as exc:
+            transient = getattr(exc, "winerror", None) in (5, 32)
+            if not transient or time.monotonic() >= deadline:
+                raise
+            time.sleep(delay)
+            delay = min(delay * 2, 0.2)
 
 
 def validate_rename_plan(plan: Sequence[FileMove]) -> None:
