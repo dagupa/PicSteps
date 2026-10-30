@@ -17,6 +17,7 @@ class PresentationWindow(QWidget):
         paths: list[str],
         rotations: dict[str, int],
         parent=None,
+        start_index: int = 0,
     ):
         super().__init__(
             parent,
@@ -28,6 +29,8 @@ class PresentationWindow(QWidget):
         self._paths = list(paths)
         self._rotations = dict(rotations)
         self._index = 0
+        if self._paths:
+            self._index = max(0, min(int(start_index), len(self._paths) - 1))
         self._image: QImage | None = None
 
         layout = QVBoxLayout(self)

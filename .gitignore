@@ -35,3 +35,6 @@ $RECYCLE.BIN/
 *.log
 *.tmp
 .picsteps_tmp_*
+
+# Pruebas locales
+FOTOS TEST/

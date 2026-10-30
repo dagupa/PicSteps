@@ -441,7 +441,6 @@ class MainWindow(QMainWindow):
         for sequence, slot in (
             ("F2", self.rename_selected),
             ("Del", self.delete_selected),
-            ("Ctrl+Z", self.undo_rename),
             ("Ctrl+Shift+R", self.renumber_images),
         ):
             shortcut = QShortcut(QKeySequence(sequence), self.view)
@@ -449,10 +448,26 @@ class MainWindow(QMainWindow):
             shortcut.activated.connect(slot)
             self._shortcuts.append(shortcut)
 
-        tree_shortcut = QShortcut(QKeySequence("F2"), self.tree)
-        tree_shortcut.setContext(Qt.ShortcutContext.WidgetWithChildrenShortcut)
-        tree_shortcut.activated.connect(self.rename_current_tree_folder)
-        self._shortcuts.append(tree_shortcut)
+        undo_shortcut = QShortcut(QKeySequence("Ctrl+Z"), self)
+        undo_shortcut.setContext(Qt.ShortcutContext.WindowShortcut)
+        undo_shortcut.activated.connect(self._shortcut_undo)
+        self._shortcuts.append(undo_shortcut)
+        self._undo_shortcut = undo_shortcut
+        app = QApplication.instance()
+        if app is not None:
+            app.focusChanged.connect(self._update_undo_shortcut)
+        self._update_undo_shortcut()
+
+        for sequence, slot in (
+            ("F2", self.rename_current_tree_folder),
+            ("Del", self.delete_current_tree_folder),
+        ):
+            tree_shortcut = QShortcut(QKeySequence(sequence), self.tree)
+            tree_shortcut.setContext(
+                Qt.ShortcutContext.WidgetWithChildrenShortcut
+            )
+            tree_shortcut.activated.connect(slot)
+            self._shortcuts.append(tree_shortcut)
 
     def _build_menus(self) -> None:
         file_menu = self.menuBar().addMenu("Archivo")
@@ -884,6 +899,14 @@ class MainWindow(QMainWindow):
         if path and os.path.isdir(path):
             self._rename_tree_path(path)
 
+    def delete_current_tree_folder(self) -> None:
+        index = self.tree.currentIndex()
+        if not index.isValid():
+            return
+        path = self.tree.fs_model.filePath(index)
+        if path and os.path.isdir(path):
+            self._delete_tree_path(path)
+
     def _rename_tree_path(self, path: str) -> None:
         old_name = os.path.basename(path)
         new_name, accepted = QInputDialog.getText(
@@ -1069,6 +1092,20 @@ class MainWindow(QMainWindow):
                 "La numeración ya está actualizada.", 4000
             )
 
+    def _update_undo_shortcut(self, *_args) -> None:
+        focus = QApplication.focusWidget()
+        self._undo_shortcut.setEnabled(
+            not isinstance(focus, QLineEdit)
+            and QApplication.activeModalWidget() is None
+        )
+
+    def _shortcut_undo(self) -> None:
+        if QApplication.activeModalWidget() is not None:
+            return
+        if isinstance(QApplication.focusWidget(), QLineEdit):
+            return
+        self.undo_rename()
+
     def undo_rename(self) -> None:
         folder = self._current_folder
         stack = self._undo.get(folder)
@@ -1178,7 +1215,15 @@ class MainWindow(QMainWindow):
         rotations = {
             path: self._rotations.get(path) for path in images
         }
-        self._presentation = PresentationWindow(images, rotations, self)
+        start_index = 0
+        current = self.view.currentIndex()
+        if current.isValid():
+            current_path = current.data(PathRole)
+            if current_path in images:
+                start_index = images.index(current_path)
+        self._presentation = PresentationWindow(
+            images, rotations, self, start_index=start_index
+        )
         self._presentation.closed.connect(self._on_presentation_closed)
         self._presentation.start()
 
