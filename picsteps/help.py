@@ -70,7 +70,7 @@ def build_help_html(version: str = __version__) -> str:
       <tr><td><b>F5</b></td><td>Actualizar la carpeta</td></tr>
       <tr><td><b>F7</b></td><td>Crear una carpeta</td></tr>
       <tr><td><b>F11</b></td><td>Iniciar el modo presentación</td></tr>
-      <tr><td><b>Supr</b></td><td>Enviar a la Papelera de Reciclaje</td></tr>
+      <tr><td><b>Supr</b></td><td>Enviar los archivos seleccionados a la Papelera de Reciclaje</td></tr>
       <tr><td><b>Ctrl + Z</b></td><td>Deshacer el último renombrado</td></tr>
       <tr><td><b>Ctrl + T</b></td><td>Alternar entre tema claro y oscuro</td></tr>
       <tr><td><b>Ctrl + rueda</b></td><td>Cambiar el tamaño de las miniaturas</td></tr>
