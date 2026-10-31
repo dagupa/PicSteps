@@ -51,8 +51,16 @@ def build_help_html(version: str = __version__) -> str:
       <li><b>Deshacer</b> (Ctrl + Z) revierte el último renombrado, incluso
       después de cerrar y volver a abrir PicSteps.</li>
     </ul>
-    <p>El botón <b>Renumerar</b> aplica la numeración al orden actual sin
-    necesidad de arrastrar nada.</p>
+    <p>La opción <b>Renumerar</b> del menú <b>Editar</b> aplica la numeración
+    al orden actual sin necesidad de arrastrar nada.</p>
+
+    <h2>Copiar, cortar y pegar</h2>
+    <p>Selecciona uno o varios archivos o carpetas y usa <b>Ctrl + C</b> para
+    copiarlos o <b>Ctrl + X</b> para cortarlos. Después abre la carpeta de
+    destino y pulsa <b>Ctrl + V</b>. También puedes pegar en una carpeta desde
+    su menú contextual en el árbol de la izquierda.</p>
+    <p>Si ya existe un archivo con el mismo nombre, se añade
+    <code>(copia)</code> o un número para no sobrescribir nada.</p>
 
     <h2>Girar y guardar imágenes</h2>
     <p>Los botones <b>Girar izq.</b> y <b>Girar der.</b> giran la vista previa
@@ -71,6 +79,9 @@ def build_help_html(version: str = __version__) -> str:
       <tr><td><b>F7</b></td><td>Crear una carpeta</td></tr>
       <tr><td><b>F11</b></td><td>Iniciar la presentación desde la imagen seleccionada</td></tr>
       <tr><td><b>Supr</b></td><td>Enviar a la Papelera la selección actual (archivos o carpeta del árbol)</td></tr>
+      <tr><td><b>Ctrl + C</b></td><td>Copiar los archivos o carpetas seleccionados</td></tr>
+      <tr><td><b>Ctrl + X</b></td><td>Cortar los archivos o carpetas seleccionados</td></tr>
+      <tr><td><b>Ctrl + V</b></td><td>Pegar en la carpeta actual</td></tr>
       <tr><td><b>Ctrl + Z</b></td><td>Deshacer el último renombrado</td></tr>
       <tr><td><b>Ctrl + T</b></td><td>Alternar entre tema claro y oscuro</td></tr>
       <tr><td><b>Ctrl + rueda</b></td><td>Cambiar el tamaño de las miniaturas</td></tr>

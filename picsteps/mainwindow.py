@@ -5,12 +5,15 @@ from __future__ import annotations
 import json
 import logging
 import os
+import struct
 import time
 
 from PySide6.QtCore import (
     QByteArray,
     QFileSystemWatcher,
+    QMimeData,
     QSettings,
+    QSize,
     Qt,
     QTimer,
     QUrl,
@@ -39,6 +42,7 @@ from PySide6.QtWidgets import (
 )
 
 from . import __version__
+from . import icons
 from . import theme
 from .browser import FolderTree, ThumbnailView
 from .config import (
@@ -65,6 +69,7 @@ from .fileops import (
     sanitize_prefix,
     save_rotation,
     save_undo_journal,
+    transfer_paths,
     undo_moves,
     validate_file_name,
 )
@@ -73,6 +78,11 @@ from .models import GridModel, IsDirRole, PathRole
 from .presentation import PresentationWindow
 from .preview import PreviewPanel
 from .thumbs import ThumbnailProvider
+
+CUT_MIME = "application/x-picsteps-cut"
+DROP_EFFECT_MIME = (
+    'application/x-qt-windows-mime;value="Preferred DropEffect"'
+)
 
 
 class RotationStore:
@@ -237,6 +247,31 @@ class MainWindow(QMainWindow):
             None,
             self.open_folder_explorer,
         )
+        self.act_cut = self._action(
+            "Cortar",
+            "Ctrl+X",
+            self.cut_selected,
+            tooltip="Cortar la selección (Ctrl+X)",
+            add_to_window=False,
+        )
+        self.act_copy = self._action(
+            "Copiar",
+            "Ctrl+C",
+            self.copy_selected,
+            tooltip="Copiar la selección (Ctrl+C)",
+            add_to_window=False,
+        )
+        self.act_paste = self._action(
+            "Pegar",
+            "Ctrl+V",
+            lambda: self.paste_files(),
+            tooltip="Pegar en la carpeta actual (Ctrl+V)",
+            add_to_window=False,
+        )
+        for action in (self.act_cut, self.act_copy, self.act_paste):
+            action.setShortcutContext(
+                Qt.ShortcutContext.WidgetWithChildrenShortcut
+            )
         self.act_undo = self._action(
             "Deshacer",
             None,
@@ -324,6 +359,42 @@ class MainWindow(QMainWindow):
             self._theme_group.addAction(action)
             self._theme_actions[mode] = action
 
+        self._refresh_icons()
+
+    def _refresh_icons(self) -> None:
+        effective = getattr(self, "_theme_effective", None)
+        if effective is None:
+            effective = theme.effective_mode(self._theme_mode)
+        color = (
+            theme.DARK["text"] if effective == "dark" else theme.LIGHT["text"]
+        )
+        icon_actions = {
+            self.act_back: "back",
+            self.act_forward: "forward",
+            self.act_up: "up",
+            self.act_refresh: "refresh",
+            self.act_new_folder: "new_folder",
+            self.act_rename: "rename",
+            self.act_delete: "delete",
+            self.act_open: "open",
+            self.act_open_folder: "open",
+            self.act_cut: "cut",
+            self.act_copy: "copy",
+            self.act_paste: "paste",
+            self.act_undo: "undo",
+            self.act_renumber: "renumber",
+            self.act_presentation: "presentation",
+            self.act_help: "help",
+        }
+        for action, name in icon_actions.items():
+            action.setIcon(icons.icon(name, color))
+        theme_color = (
+            theme.DARK["accent_text"] if self.act_theme.isChecked() else color
+        )
+        self.act_theme.setIcon(
+            icons.icon("sun" if effective == "dark" else "dark", theme_color)
+        )
+
     def _build_ui(self) -> None:
         self.resize(1400, 900)
         self.setMinimumSize(1000, 640)
@@ -332,7 +403,8 @@ class MainWindow(QMainWindow):
         toolbar.setObjectName("mainToolBar")
         toolbar.setMovable(False)
         toolbar.setFloatable(False)
-        toolbar.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextOnly)
+        toolbar.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonIconOnly)
+        toolbar.setIconSize(QSize(20, 20))
         self.addToolBar(toolbar)
 
         for action in (
@@ -367,9 +439,6 @@ class MainWindow(QMainWindow):
             toolbar.addAction(action)
         toolbar.addSeparator()
 
-        toolbar.addAction(self.act_undo)
-        toolbar.addAction(self.act_renumber)
-        toolbar.addSeparator()
         toolbar.addAction(self.act_presentation)
         toolbar.addAction(self.act_theme)
         toolbar.addAction(self.act_help)
@@ -424,6 +493,9 @@ class MainWindow(QMainWindow):
         )
 
         for action in (
+            self.act_cut,
+            self.act_copy,
+            self.act_paste,
             self.act_open,
             self.act_open_folder,
             self.act_rename,
@@ -482,6 +554,11 @@ class MainWindow(QMainWindow):
 
         edit_menu = self.menuBar().addMenu("Editar")
         edit_menu.addAction(self.act_undo)
+        edit_menu.addSeparator()
+        edit_menu.addAction(self.act_cut)
+        edit_menu.addAction(self.act_copy)
+        edit_menu.addAction(self.act_paste)
+        edit_menu.addSeparator()
         edit_menu.addAction(self.act_renumber)
         edit_menu.addSeparator()
         edit_menu.addAction(self.act_prefix)
@@ -535,6 +612,7 @@ class MainWindow(QMainWindow):
         self.preview.saveRotationRequested.connect(self.save_selected_rotation)
         self.preview.openRequested.connect(self.open_selected)
         self.size_slider.valueChanged.connect(self._on_slider_changed)
+        QApplication.clipboard().dataChanged.connect(self._update_actions)
 
         self._zoom_timer = QTimer(self)
         self._zoom_timer.setSingleShot(True)
@@ -583,6 +661,7 @@ class MainWindow(QMainWindow):
             action.blockSignals(True)
             action.setChecked(mode == self._theme_mode)
             action.blockSignals(False)
+        self._refresh_icons()
 
     def _toggle_theme(self, checked: bool) -> None:
         self._set_theme_mode("dark" if checked else "light")
@@ -715,6 +794,137 @@ class MainWindow(QMainWindow):
                 paths.append(path)
         return paths
 
+    def _clipboard_sources(self) -> tuple[list[str], bool]:
+        mime = QApplication.clipboard().mimeData()
+        if mime is None:
+            return [], False
+
+        move = mime.hasFormat(CUT_MIME)
+        paths: list[str] = []
+        if move:
+            try:
+                raw = bytes(mime.data(CUT_MIME)).decode("utf-8")
+                data = json.loads(raw)
+            except (TypeError, ValueError, UnicodeDecodeError):
+                data = None
+            if isinstance(data, list):
+                paths = [path for path in data if isinstance(path, str)]
+        else:
+            effect = mime.data(DROP_EFFECT_MIME)
+            if effect:
+                try:
+                    move = bool(
+                        int.from_bytes(bytes(effect)[:4], "little") & 2
+                    )
+                except (TypeError, ValueError):
+                    move = False
+
+        if not paths and mime.hasUrls():
+            paths = [
+                url.toLocalFile()
+                for url in mime.urls()
+                if url.isLocalFile()
+            ]
+        return paths, move
+
+    def _clipboard_has_paths(self) -> bool:
+        paths, _move = self._clipboard_sources()
+        return any(os.path.exists(path) for path in paths)
+
+    def _set_file_clipboard(self, paths: list[str], move: bool) -> None:
+        mime = QMimeData()
+        mime.setUrls([QUrl.fromLocalFile(path) for path in paths])
+        mime.setText("\n".join(paths))
+        mime.setData(
+            DROP_EFFECT_MIME,
+            struct.pack("<I", 2 if move else 1),
+        )
+        if move:
+            mime.setData(
+                CUT_MIME,
+                json.dumps(paths, ensure_ascii=False).encode("utf-8"),
+            )
+        QApplication.clipboard().setMimeData(mime)
+
+    def copy_selected(self) -> None:
+        paths = self._selected_paths()
+        if not paths:
+            return
+        self._set_file_clipboard(paths, move=False)
+        self.statusBar().showMessage(
+            f"{len(paths)} elemento(s) copiado(s).", 4000
+        )
+
+    def cut_selected(self) -> None:
+        paths = self._selected_paths()
+        if not paths:
+            return
+        self._set_file_clipboard(paths, move=True)
+        self.statusBar().showMessage(
+            f"{len(paths)} elemento(s) cortado(s).", 4000
+        )
+
+    def paste_files(self, destination: str | None = None) -> None:
+        destination = os.path.abspath(destination or self._current_folder)
+        if not destination or not os.path.isdir(destination):
+            return
+
+        sources, move = self._clipboard_sources()
+        sources = [path for path in sources if os.path.exists(path)]
+        if not sources:
+            self.statusBar().showMessage(
+                "No hay archivos para pegar.", 4000
+            )
+            return
+
+        try:
+            transfers = transfer_paths(sources, destination, move=move)
+        except RenameError as exc:
+            QMessageBox.critical(
+                self, "PicSteps", f"No se pudo pegar:\n{exc}"
+            )
+            return
+
+        if not transfers:
+            self.statusBar().showMessage(
+                "No hay nada que pegar en esta carpeta.", 4000
+            )
+            return
+
+        for transfer in transfers:
+            if not is_image_file(transfer.target):
+                continue
+            if move:
+                self._transfer_rotation(transfer.source, transfer.target)
+            else:
+                degrees = self._rotations.get(transfer.source)
+                if degrees:
+                    self._rotations.set(transfer.target, degrees)
+                    self.provider.set_rotation(transfer.target, degrees)
+
+        if move:
+            QApplication.clipboard().clear()
+
+        self._mark_self_change()
+        if os.path.normcase(destination) == os.path.normcase(
+            self._current_folder
+        ):
+            self._load_folder(
+                destination, [transfer.target for transfer in transfers]
+            )
+        else:
+            source_folders = {
+                os.path.normcase(os.path.dirname(source))
+                for source in sources
+            }
+            if move and os.path.normcase(self._current_folder) in source_folders:
+                self.refresh()
+        self._update_actions()
+        action = "movido" if move else "copiado"
+        self.statusBar().showMessage(
+            f"{len(transfers)} elemento(s) {action}(s).", 5000
+        )
+
     def _on_selection_changed(self, *_args) -> None:
         paths = self._selected_paths()
         if len(paths) == 1 and is_image_file(paths[0]):
@@ -755,6 +965,9 @@ class MainWindow(QMainWindow):
         self.act_rename.setEnabled(single)
         self.act_delete.setEnabled(has_selection)
         self.act_open.setEnabled(has_selection)
+        self.act_cut.setEnabled(has_selection)
+        self.act_copy.setEnabled(has_selection)
+        self.act_paste.setEnabled(self._clipboard_has_paths())
         self.act_open_folder.setEnabled(bool(self._current_folder))
         self.act_undo.setEnabled(
             bool(self._undo.get(self._current_folder, []))
@@ -992,6 +1205,9 @@ class MainWindow(QMainWindow):
         open_action.triggered.connect(lambda: self.navigate(path))
         new_action = menu.addAction("Nueva carpeta")
         new_action.triggered.connect(lambda: self._new_folder_in(path))
+        paste_action = menu.addAction("Pegar")
+        paste_action.setEnabled(self._clipboard_has_paths())
+        paste_action.triggered.connect(lambda: self.paste_files(path))
         rename_action = menu.addAction("Renombrar")
         rename_action.triggered.connect(lambda: self._rename_tree_path(path))
         delete_action = menu.addAction("Eliminar")

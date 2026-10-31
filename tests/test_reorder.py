@@ -12,7 +12,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 from PIL import Image
 from PySide6.QtCore import QMimeData, QPointF, Qt
 from PySide6.QtGui import QDropEvent
-from PySide6.QtWidgets import QApplication
+from PySide6.QtWidgets import QAbstractItemView, QApplication, QListView
 
 from picsteps.browser import ThumbnailView
 from picsteps.fileops import (
@@ -58,6 +58,21 @@ class DragReorderTests(unittest.TestCase):
         self.provider.shutdown()
         self.app.processEvents()
         shutil.rmtree(self.temp_dir, ignore_errors=True)
+
+    def test_view_is_configured_for_move_drags(self) -> None:
+        self.assertNotEqual(
+            self.view.movement(), QListView.Movement.Static
+        )
+        self.assertEqual(
+            self.view.dragDropMode(),
+            QAbstractItemView.DragDropMode.DragDrop,
+        )
+        self.assertTrue(
+            self.model.supportedDragActions() & Qt.DropAction.MoveAction
+        )
+        self.assertTrue(
+            self.model.supportedDropActions() & Qt.DropAction.MoveAction
+        )
 
     def _drop_before_row(self, sources: str | list[str], target_row: int) -> None:
         if isinstance(sources, str):

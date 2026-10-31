@@ -6,6 +6,7 @@ import hashlib
 import json
 import os
 import re
+import shutil
 import tempfile
 import time
 import uuid
@@ -359,6 +360,128 @@ def rename_path(path: str, new_name: str) -> str:
         raise RenameError(f"Ya existe:\n{target}")
     _rename(path, target)
     return target
+
+
+def unique_target(
+    path: str,
+    is_dir: bool = False,
+    tag: str | None = "copia",
+) -> str:
+    """Devuelve una ruta libre añadiendo un sufijo si ya existe."""
+    if not os.path.exists(path):
+        return path
+
+    folder, name = os.path.split(path)
+    if is_dir:
+        stem, extension = name, ""
+    else:
+        stem, extension = os.path.splitext(name)
+
+    if tag:
+        candidate = os.path.join(folder, f"{stem} ({tag}){extension}")
+        pattern = lambda number: os.path.join(
+            folder, f"{stem} ({tag} {number}){extension}"
+        )
+    else:
+        candidate = os.path.join(folder, f"{stem} (2){extension}")
+        pattern = lambda number: os.path.join(
+            folder, f"{stem} ({number}){extension}"
+        )
+
+    number = 2
+    while os.path.exists(candidate):
+        candidate = pattern(number)
+        number += 1
+    return candidate
+
+
+def transfer_paths(
+    sources: Sequence[str],
+    destination: str,
+    move: bool = False,
+) -> list[FileMove]:
+    """Copia o mueve archivos y carpetas a una carpeta de destino."""
+    destination = os.path.abspath(destination)
+    if not os.path.isdir(destination):
+        raise RenameError(f"La carpeta de destino no existe:\n{destination}")
+
+    transfers: list[FileMove] = []
+    seen: set[str] = set()
+    for source in sources:
+        source = os.path.abspath(source)
+        if not os.path.exists(source):
+            raise RenameError(f"El archivo ya no existe:\n{source}")
+        source_key = os.path.normcase(source)
+        if source_key in seen:
+            continue
+        seen.add(source_key)
+
+        is_dir = os.path.isdir(source)
+        if move and os.path.normcase(os.path.dirname(source)) == os.path.normcase(
+            destination
+        ):
+            continue
+
+        if is_dir:
+            destination_key = os.path.normcase(destination)
+            if destination_key == source_key or destination_key.startswith(
+                source_key + os.sep
+            ):
+                raise RenameError(
+                    "No se puede copiar o mover una carpeta dentro de sí misma."
+                )
+
+        target = unique_target(
+            os.path.join(destination, os.path.basename(source)),
+            is_dir,
+            None if move else "copia",
+        )
+        if len(target) > 259:
+            raise RenameError(
+                "La ruta resultante es demasiado larga para Windows:\n" + target
+            )
+        transfers.append(FileMove(source, target))
+
+    if not transfers:
+        return []
+
+    performed: list[FileMove] = []
+    try:
+        for transfer in transfers:
+            performed.append(transfer)
+            if move:
+                shutil.move(transfer.source, transfer.target)
+            elif os.path.isdir(transfer.source):
+                shutil.copytree(transfer.source, transfer.target)
+            else:
+                shutil.copy2(transfer.source, transfer.target)
+    except Exception as exc:
+        rollback_errors: list[str] = []
+        for transfer in reversed(performed):
+            try:
+                if move:
+                    if os.path.exists(transfer.target):
+                        shutil.move(transfer.target, transfer.source)
+                elif os.path.isdir(transfer.target):
+                    shutil.rmtree(transfer.target)
+                elif os.path.exists(transfer.target):
+                    os.remove(transfer.target)
+            except OSError as rollback_exc:
+                rollback_errors.append(f"{transfer.target}: {rollback_exc}")
+        message = (
+            "No se pudo copiar o mover:\n"
+            if not move
+            else "No se pudo mover:\n"
+        )
+        message += str(exc)
+        if rollback_errors:
+            message += "\n\nAdemás, falló la restauración de:\n" + "\n".join(
+                rollback_errors
+            )
+        raise RenameError(message) from exc
+
+    return performed
+
 
 
 def _journal_path(folder: str) -> str:

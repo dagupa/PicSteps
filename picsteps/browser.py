@@ -102,7 +102,7 @@ class ThumbnailView(QListView):
 
         self.setViewMode(QListView.ViewMode.IconMode)
         self.setResizeMode(QListView.ResizeMode.Adjust)
-        self.setMovement(QListView.Movement.Static)
+        self.setMovement(QListView.Movement.Snap)
         self.setFlow(QListView.Flow.LeftToRight)
         self.setWrapping(True)
         self.setUniformItemSizes(True)
@@ -183,7 +183,8 @@ class ThumbnailView(QListView):
 
     def dragEnterEvent(self, event) -> None:
         if event.mimeData().hasFormat(MIME_TYPE):
-            event.acceptProposedAction()
+            event.setDropAction(Qt.DropAction.MoveAction)
+            event.accept()
         else:
             event.ignore()
 
@@ -195,7 +196,8 @@ class ThumbnailView(QListView):
         self._drop_row = row
         self._drop_after = after
         self.viewport().update()
-        event.acceptProposedAction()
+        event.setDropAction(Qt.DropAction.MoveAction)
+        event.accept()
 
     def dragLeaveEvent(self, event) -> None:
         self._drop_row = -1

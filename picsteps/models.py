@@ -14,7 +14,15 @@ from PySide6.QtCore import (
     QSize,
     Qt,
 )
-from PySide6.QtGui import QColor, QFont, QFontMetrics, QPainter, QPalette, QPixmap
+from PySide6.QtGui import (
+    QColor,
+    QFont,
+    QFontMetrics,
+    QPainter,
+    QPalette,
+    QPen,
+    QPixmap,
+)
 from PySide6.QtWidgets import QListView, QStyle, QStyledItemDelegate
 
 from .config import THUMB_DEFAULT
@@ -122,6 +130,12 @@ class GridModel(QAbstractListModel):
             if self._items[index.row()].is_image:
                 base |= Qt.ItemFlag.ItemIsDragEnabled
         return base
+
+    def supportedDropActions(self) -> Qt.DropAction:
+        return Qt.DropAction.MoveAction
+
+    def supportedDragActions(self) -> Qt.DropAction:
+        return Qt.DropAction.MoveAction
 
     def mimeTypes(self) -> list[str]:
         return [MIME_TYPE]
@@ -258,11 +272,38 @@ class ThumbnailDelegate(QStyledItemDelegate):
         hovered = bool(option.state & QStyle.StateFlag.State_MouseOver)
 
         if selected:
-            color = QColor(palette.color(QPalette.ColorRole.Highlight))
-            color.setAlpha(65)
+            highlight = QColor(palette.color(QPalette.ColorRole.Highlight))
+            dark = (
+                palette.color(QPalette.ColorRole.Window).lightness() < 128
+            )
+            if dark:
+                shadow_rect = rect
+                shadow_base = highlight
+                shadow_layers = ((3, 46), (2, 72))
+            else:
+                shadow_rect = rect.adjusted(2, 4, 2, 4)
+                shadow_base = QColor(0, 0, 0)
+                shadow_layers = ((2, 24), (1, 38))
+            for spread, alpha in shadow_layers:
+                shadow = QColor(shadow_base)
+                shadow.setAlpha(alpha)
+                painter.setPen(Qt.PenStyle.NoPen)
+                painter.setBrush(shadow)
+                painter.drawRoundedRect(
+                    shadow_rect.adjusted(-spread, -spread, spread, spread),
+                    8 + spread,
+                    8 + spread,
+                )
+            fill = QColor(highlight)
+            fill.setAlpha(125 if dark else 105)
             painter.setPen(Qt.PenStyle.NoPen)
-            painter.setBrush(color)
+            painter.setBrush(fill)
             painter.drawRoundedRect(rect, 8, 8)
+            border = QColor(highlight)
+            border.setAlpha(235)
+            painter.setPen(QPen(border, 2))
+            painter.setBrush(Qt.BrushStyle.NoBrush)
+            painter.drawRoundedRect(rect.adjusted(1, 1, -1, -1), 7, 7)
         elif hovered:
             color = QColor(palette.color(QPalette.ColorRole.AlternateBase))
             color.setAlpha(130)

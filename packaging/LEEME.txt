@@ -12,6 +12,7 @@ Uso básico
 - Abre una carpeta desde el árbol de la izquierda o escribiendo su ruta.
 - Arrastra las miniaturas para ordenar los pasos; se renumeran al soltar.
 - Ctrl+Z deshace el último renombrado de la carpeta actual.
+- Ctrl+C y Ctrl+X copian o cortan la selección; Ctrl+V la pega.
 - F11 abre la presentación desde la imagen seleccionada.
 - Supr envía a la Papelera los archivos seleccionados o la carpeta del árbol.
 

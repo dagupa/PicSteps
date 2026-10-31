@@ -22,6 +22,7 @@ from picsteps.fileops import (
     save_rotation,
     save_undo_journal,
     split_step_name,
+    transfer_paths,
     undo_moves,
     validate_rename_plan,
     RenameError,
@@ -187,6 +188,96 @@ class RenameTests(unittest.TestCase):
         self.assertEqual(content.others, [])
         content_all = list_folder(str(self.folder), show_all=True)
         self.assertEqual([Path(p).name for p in content_all.others], ["nota.txt"])
+
+
+class TransferTests(unittest.TestCase):
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.root = Path(self.temp.name)
+        self.source = self.root / "origen"
+        self.destination = self.root / "destino"
+        self.source.mkdir()
+        self.destination.mkdir()
+
+    def tearDown(self):
+        self.temp.cleanup()
+
+    def make(self, folder: Path, name: str, data: bytes = b"contenido") -> Path:
+        path = folder / name
+        path.write_bytes(data)
+        return path
+
+    def test_copy_file_to_another_folder(self):
+        source = self.make(self.source, "foto.jpg", b"foto")
+        transfers = transfer_paths([str(source)], str(self.destination))
+        target = Path(transfers[0].target)
+
+        self.assertTrue(source.exists())
+        self.assertEqual(target.read_bytes(), b"foto")
+        self.assertEqual(target.parent, self.destination)
+
+    def test_copy_collision_uses_copy_suffix(self):
+        source = self.make(self.source, "foto.jpg", b"nueva")
+        self.make(self.destination, "foto.jpg", b"existente")
+        transfers = transfer_paths([str(source)], str(self.destination))
+
+        self.assertEqual(Path(transfers[0].target).name, "foto (copia).jpg")
+        self.assertEqual(
+            (self.destination / "foto.jpg").read_bytes(), b"existente"
+        )
+
+    def test_move_file_to_another_folder(self):
+        source = self.make(self.source, "foto.jpg", b"foto")
+        transfers = transfer_paths(
+            [str(source)], str(self.destination), move=True
+        )
+
+        self.assertFalse(source.exists())
+        self.assertTrue(Path(transfers[0].target).exists())
+
+    def test_move_same_folder_is_noop(self):
+        source = self.make(self.source, "foto.jpg")
+        transfers = transfer_paths(
+            [str(source)], str(self.source), move=True
+        )
+
+        self.assertEqual(transfers, [])
+        self.assertTrue(source.exists())
+
+    def test_move_collision_uses_number(self):
+        source = self.make(self.source, "foto.jpg", b"nueva")
+        self.make(self.destination, "foto.jpg", b"existente")
+        transfers = transfer_paths(
+            [str(source)], str(self.destination), move=True
+        )
+
+        self.assertEqual(Path(transfers[0].target).name, "foto (2).jpg")
+        self.assertFalse(source.exists())
+
+    def test_copy_folder_into_itself_is_rejected(self):
+        child = self.source / "subcarpeta"
+        child.mkdir()
+        with self.assertRaises(RenameError):
+            transfer_paths([str(self.source)], str(child))
+
+    def test_copy_failure_removes_partial_targets(self):
+        first = self.make(self.source, "a.txt", b"a")
+        second = self.make(self.source, "b.txt", b"b")
+        real_copy2 = fileops.shutil.copy2
+
+        def flaky_copy2(src, dst):
+            if Path(dst).name == "b.txt":
+                raise OSError("fallo simulado")
+            return real_copy2(src, dst)
+
+        with mock.patch.object(fileops.shutil, "copy2", side_effect=flaky_copy2):
+            with self.assertRaises(RenameError):
+                transfer_paths(
+                    [str(first), str(second)], str(self.destination)
+                )
+
+        self.assertFalse((self.destination / "a.txt").exists())
+        self.assertFalse((self.destination / "b.txt").exists())
 
 
 class RenameRetryTests(unittest.TestCase):
