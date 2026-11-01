@@ -93,11 +93,20 @@ class ThumbnailView(QListView):
     openRequested = Signal(str)
     zoomRequested = Signal(int)
 
+    _AUTOSCROLL_INTERVAL_MS = 30
+    _AUTOSCROLL_MARGIN = 40
+    _AUTOSCROLL_MIN_STEP = 2
+    _AUTOSCROLL_MAX_STEP = 28
+
     def __init__(self, parent=None):
         super().__init__(parent)
         self._thumb_size = THUMB_DEFAULT
         self._drop_row = -1
         self._drop_after = False
+        self._drag_position: QPoint | None = None
+        self._autoscroll_timer = QTimer(self)
+        self._autoscroll_timer.setInterval(self._AUTOSCROLL_INTERVAL_MS)
+        self._autoscroll_timer.timeout.connect(self._autoscroll_tick)
         self._delegate = ThumbnailDelegate(self, self)
 
         self.setViewMode(QListView.ViewMode.IconMode)
@@ -154,7 +163,68 @@ class ThumbnailView(QListView):
             self.setCurrentIndex(last_index)
             self.scrollTo(last_index)
 
+    def _autoscroll_margin(self) -> int:
+        height = self.viewport().height()
+        if height <= 0:
+            return 0
+        return max(1, min(self._AUTOSCROLL_MARGIN, height // 4))
+
+    def _autoscroll_step(self, y: int) -> int:
+        height = self.viewport().height()
+        margin = self._autoscroll_margin()
+        if margin <= 0:
+            return 0
+        if y < margin:
+            intensity = max(0.0, min(1.0, (margin - y) / margin))
+            direction = -1
+        elif y > height - margin:
+            intensity = max(
+                0.0,
+                min(1.0, (y - (height - margin)) / margin),
+            )
+            direction = 1
+        else:
+            return 0
+        span = self._AUTOSCROLL_MAX_STEP - self._AUTOSCROLL_MIN_STEP
+        return direction * round(
+            self._AUTOSCROLL_MIN_STEP + span * intensity**2
+        )
+
+    def _update_drag_autoscroll(self, position: QPoint) -> None:
+        self._drag_position = position
+        if self._autoscroll_step(position.y()) == 0:
+            self._autoscroll_timer.stop()
+            return
+        if not self._autoscroll_timer.isActive():
+            self._autoscroll_timer.start()
+        self._autoscroll_tick()
+
+    def _autoscroll_tick(self) -> None:
+        position = self._drag_position
+        if position is None:
+            self._autoscroll_timer.stop()
+            return
+        step = self._autoscroll_step(position.y())
+        if step == 0:
+            self._autoscroll_timer.stop()
+            return
+        scrollbar = self.verticalScrollBar()
+        previous = scrollbar.value()
+        scrollbar.setValue(previous + step)
+        if scrollbar.value() == previous:
+            self._autoscroll_timer.stop()
+            return
+        row, after = self._compute_target(position)
+        self._drop_row = row
+        self._drop_after = after
+        self.viewport().update()
+
+    def _stop_drag_autoscroll(self) -> None:
+        self._autoscroll_timer.stop()
+        self._drag_position = None
+
     def startDrag(self, supported_actions) -> None:
+        self._stop_drag_autoscroll()
         model = self.model()
         if model is None:
             return
@@ -182,6 +252,7 @@ class ThumbnailView(QListView):
         drag.exec(Qt.DropAction.MoveAction)
 
     def dragEnterEvent(self, event) -> None:
+        self._stop_drag_autoscroll()
         if event.mimeData().hasFormat(MIME_TYPE):
             event.setDropAction(Qt.DropAction.MoveAction)
             event.accept()
@@ -190,21 +261,26 @@ class ThumbnailView(QListView):
 
     def dragMoveEvent(self, event) -> None:
         if not event.mimeData().hasFormat(MIME_TYPE):
+            self._stop_drag_autoscroll()
             event.ignore()
             return
-        row, after = self._compute_target(event.position().toPoint())
+        position = event.position().toPoint()
+        row, after = self._compute_target(position)
         self._drop_row = row
         self._drop_after = after
         self.viewport().update()
+        self._update_drag_autoscroll(position)
         event.setDropAction(Qt.DropAction.MoveAction)
         event.accept()
 
     def dragLeaveEvent(self, event) -> None:
+        self._stop_drag_autoscroll()
         self._drop_row = -1
         self.viewport().update()
         super().dragLeaveEvent(event)
 
     def dropEvent(self, event) -> None:
+        self._stop_drag_autoscroll()
         if not event.mimeData().hasFormat(MIME_TYPE):
             event.ignore()
             return

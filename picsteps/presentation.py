@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
+import html
 import os
 
 from PySide6.QtCore import QSize, Qt, Signal
 from PySide6.QtGui import QImage, QImageReader, QPixmap, QTransform
 from PySide6.QtWidgets import QLabel, QSizePolicy, QVBoxLayout, QWidget
+
+from .annotations import AnnotatedImageLabel
 
 
 class PresentationWindow(QWidget):
@@ -18,6 +21,7 @@ class PresentationWindow(QWidget):
         rotations: dict[str, int],
         parent=None,
         start_index: int = 0,
+        step_infos: dict[str, dict] | None = None,
     ):
         super().__init__(
             parent,
@@ -28,6 +32,7 @@ class PresentationWindow(QWidget):
         self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
         self._paths = list(paths)
         self._rotations = dict(rotations)
+        self._step_infos = step_infos or {}
         self._index = 0
         if self._paths:
             self._index = max(0, min(int(start_index), len(self._paths) - 1))
@@ -37,7 +42,7 @@ class PresentationWindow(QWidget):
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(0)
 
-        self.image_label = QLabel()
+        self.image_label = AnnotatedImageLabel()
         self.image_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.image_label.setStyleSheet("background: #000000;")
         self.image_label.setSizePolicy(
@@ -46,13 +51,14 @@ class PresentationWindow(QWidget):
         )
         layout.addWidget(self.image_label, 1)
 
-        self.caption = QLabel()
-        self.caption.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.caption.setStyleSheet(
-            "background: #0b0b0b; color: #e6e6e6; padding: 10px; "
-            "font-size: 15px;"
+        self.caption_label = QLabel()
+        self.caption_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.caption_label.setStyleSheet(
+            "color: white; padding: 20px; font-size: 16px; background: rgba(0,0,0,150);"
         )
-        layout.addWidget(self.caption)
+        self.caption_label.setWordWrap(True)
+        self.caption_label.hide()
+        layout.addWidget(self.caption_label)
 
     def start(self) -> None:
         self.showFullScreen()
@@ -68,6 +74,12 @@ class PresentationWindow(QWidget):
         self._index %= len(self._paths)
         path = self._paths[self._index]
         rotation = int(self._rotations.get(path, 0)) % 360
+        info = self._step_infos.get(path, {})
+        annotations = info.get("annotations", [])
+        title = str(info.get("title") or os.path.basename(path))
+        note = str(info.get("note", ""))
+
+        self.image_label.set_annotations(annotations, rotation)
 
         reader = QImageReader(path)
         reader.setAutoTransform(True)
@@ -100,12 +112,18 @@ class PresentationWindow(QWidget):
             self._image = image
             self._update_pixmap()
 
-        name = os.path.basename(path)
-        self.caption.setText(
-            f"Paso {self._index + 1:02d} de {len(self._paths):02d} · {name}"
-            "<br><span style='color:#8f8f8f; font-size:12px;'>"
+        caption = (
+            f"Paso {self._index + 1:02d} de {len(self._paths):02d} · "
+            f"<b>{html.escape(title)}</b>"
+        )
+        if note:
+            caption += f"<br/>{html.escape(note)}"
+        caption += (
+            "<br/><span style='color:#8f8f8f; font-size:12px;'>"
             "← → para navegar · Esc para salir</span>"
         )
+        self.caption_label.setText(caption)
+        self.caption_label.show()
 
     def _update_pixmap(self) -> None:
         if self._image is None:

@@ -5,17 +5,28 @@ from __future__ import annotations
 import os
 
 from PIL import Image, ImageOps
-from PySide6.QtCore import QObject, QRunnable, QSize, Qt, QThreadPool, Signal
+from PySide6.QtCore import (
+    QObject,
+    QRunnable,
+    QSize,
+    Qt,
+    QThreadPool,
+    QTimer,
+    Signal,
+)
 from PySide6.QtGui import QImage, QPixmap
 from PySide6.QtWidgets import (
     QFrame,
     QHBoxLayout,
     QLabel,
+    QLineEdit,
+    QPlainTextEdit,
     QPushButton,
     QSizePolicy,
     QVBoxLayout,
 )
 
+from .annotations import AnnotatedImageLabel
 from .fileops import format_bytes, format_mtime
 
 
@@ -75,6 +86,8 @@ class PreviewPanel(QFrame):
     rotateRequested = Signal(int)
     saveRotationRequested = Signal()
     openRequested = Signal()
+    annotateRequested = Signal()
+    notesEdited = Signal(str, str, str)
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -84,6 +97,13 @@ class PreviewPanel(QFrame):
         self._qimage: QImage | None = None
         self._info: dict = {}
         self._token = 0
+        self._annotations: list[dict] = []
+        self._notes_path: str | None = None
+        self._notes_dirty = False
+        self._notes_timer = QTimer(self)
+        self._notes_timer.setSingleShot(True)
+        self._notes_timer.setInterval(500)
+        self._notes_timer.timeout.connect(self.flush_notes)
         self._signals = _PreviewSignals(self)
         self._signals.loaded.connect(self._on_loaded)
         self._signals.failed.connect(self._on_failed)
@@ -97,7 +117,9 @@ class PreviewPanel(QFrame):
         title.setObjectName("previewTitle")
         layout.addWidget(title)
 
-        self.image_label = QLabel("Selecciona una imagen para verla")
+        self.image_label = AnnotatedImageLabel(
+            "Selecciona una imagen para verla"
+        )
         self.image_label.setObjectName("previewImage")
         self.image_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.image_label.setMinimumSize(220, 240)
@@ -120,6 +142,19 @@ class PreviewPanel(QFrame):
         )
         layout.addWidget(self.info_label)
 
+        notes_title = QLabel("Título del paso", self)
+        notes_title.setObjectName("mutedLabel")
+        layout.addWidget(notes_title)
+        self.title_edit = QLineEdit(self)
+        self.title_edit.setPlaceholderText("Título visible en la miniatura")
+        self.title_edit.setClearButtonEnabled(True)
+        layout.addWidget(self.title_edit)
+
+        self.note_edit = QPlainTextEdit(self)
+        self.note_edit.setPlaceholderText("Nota o descripción del paso")
+        self.note_edit.setFixedHeight(68)
+        layout.addWidget(self.note_edit)
+
         rotate_layout = QHBoxLayout()
         rotate_layout.setSpacing(6)
         self.rotate_left = QPushButton("Girar izq.")
@@ -139,14 +174,22 @@ class PreviewPanel(QFrame):
         )
         self.open_button = QPushButton("Abrir")
         self.open_button.setToolTip("Abrir con el visor predeterminado de Windows")
+        self.annotate_button = QPushButton("Anotar…")
+        self.annotate_button.setToolTip(
+            "Añadir flechas, formas o texto sin modificar la imagen"
+        )
         action_layout.addWidget(self.save_button, 1)
+        action_layout.addWidget(self.annotate_button)
         action_layout.addWidget(self.open_button)
         layout.addLayout(action_layout)
 
         self.rotate_left.clicked.connect(lambda: self.rotateRequested.emit(-90))
         self.rotate_right.clicked.connect(lambda: self.rotateRequested.emit(90))
         self.save_button.clicked.connect(self.saveRotationRequested.emit)
+        self.annotate_button.clicked.connect(self.annotateRequested.emit)
         self.open_button.clicked.connect(self.openRequested.emit)
+        self.title_edit.textChanged.connect(self._on_notes_changed)
+        self.note_edit.textChanged.connect(self._on_notes_changed)
 
         self._update_buttons()
 
@@ -154,20 +197,39 @@ class PreviewPanel(QFrame):
     def current_path(self) -> str | None:
         return self._path
 
-    def set_image(self, path: str | None, rotation: int = 0) -> None:
+    def set_image(
+        self,
+        path: str | None,
+        rotation: int = 0,
+        annotations: list[dict] | None = None,
+    ) -> None:
         if not path:
             self.clear()
             return
         rotation = int(rotation) % 360
-        if path == self._path and rotation == self._rotation and self._qimage:
+        if annotations is not None:
+            self._annotations = list(annotations)
+        same_image = (
+            path == self._path
+            and rotation == self._rotation
+            and self._qimage
+        )
+        if same_image:
+            self.image_label.set_annotations(self._annotations, rotation)
             return
-        self._path = path
+        if path != self._path:
+            self.flush_notes()
+            self._path = path
+            if annotations is None:
+                self._annotations = []
+            self.set_notes("", "")
         self._rotation = rotation
         self._token += 1
         self._qimage = None
         self._info = {}
         self.image_label.setPixmap(QPixmap())
         self.image_label.setText("Cargando…")
+        self.image_label.set_annotations(self._annotations, rotation)
         self.info_label.setText("Cargando imagen…")
         self._update_buttons()
         worker = _PreviewWorker(
@@ -183,15 +245,66 @@ class PreviewPanel(QFrame):
         if self._path:
             self.set_image(self._path, rotation)
 
+    def set_annotations(
+        self,
+        annotations: list[dict],
+        rotation: int | None = None,
+    ) -> None:
+        self._annotations = list(annotations)
+        if rotation is not None:
+            self._rotation = int(rotation) % 360
+        self.image_label.set_annotations(
+            self._annotations,
+            self._rotation,
+        )
+
+    def set_notes(self, title: str, note: str) -> None:
+        self._notes_timer.stop()
+        self._notes_dirty = False
+        self._notes_path = self._path
+        for widget, value in (
+            (self.title_edit, title),
+            (self.note_edit, note),
+        ):
+            widget.blockSignals(True)
+            if isinstance(widget, QLineEdit):
+                widget.setText(value)
+            else:
+                widget.setPlainText(value)
+            widget.blockSignals(False)
+        self._update_notes_enabled()
+
+    def _on_notes_changed(self, *_args) -> None:
+        if not self._path:
+            return
+        self._notes_path = self._path
+        self._notes_dirty = True
+        self._notes_timer.start()
+
+    def flush_notes(self) -> None:
+        self._notes_timer.stop()
+        if not self._notes_dirty or not self._notes_path:
+            return
+        self._notes_dirty = False
+        self.notesEdited.emit(
+            self._notes_path,
+            self.title_edit.text(),
+            self.note_edit.toPlainText(),
+        )
+
     def clear(self) -> None:
+        self.flush_notes()
         self._token += 1
         self._path = None
         self._rotation = 0
         self._qimage = None
         self._info = {}
+        self._annotations = []
         self.image_label.setPixmap(QPixmap())
         self.image_label.setText("Selecciona una imagen para verla")
+        self.image_label.set_annotations([], 0)
         self.info_label.setText("")
+        self.set_notes("", "")
         self._update_buttons()
 
     def _on_loaded(
@@ -253,16 +366,24 @@ class PreviewPanel(QFrame):
         self.image_label.setPixmap(pixmap)
 
     def shutdown(self) -> None:
+        self.flush_notes()
         self._token += 1
         QThreadPool.globalInstance().clear()
         QThreadPool.globalInstance().waitForDone(1500)
+
+    def _update_notes_enabled(self) -> None:
+        enabled = self._path is not None
+        self.title_edit.setEnabled(enabled)
+        self.note_edit.setEnabled(enabled)
 
     def _update_buttons(self) -> None:
         has_image = self._path is not None
         self.rotate_left.setEnabled(has_image)
         self.rotate_right.setEnabled(has_image)
         self.open_button.setEnabled(has_image)
+        self.annotate_button.setEnabled(has_image)
         self.save_button.setEnabled(has_image and bool(self._rotation % 360))
+        self._update_notes_enabled()
 
     def resizeEvent(self, event) -> None:
         super().resizeEvent(event)

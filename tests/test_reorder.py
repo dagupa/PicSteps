@@ -11,7 +11,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from PIL import Image
 from PySide6.QtCore import QMimeData, QPointF, Qt
-from PySide6.QtGui import QDropEvent
+from PySide6.QtGui import QDragLeaveEvent, QDragMoveEvent, QDropEvent
 from PySide6.QtWidgets import QAbstractItemView, QApplication, QListView
 
 from picsteps.browser import ThumbnailView
@@ -73,6 +73,68 @@ class DragReorderTests(unittest.TestCase):
         self.assertTrue(
             self.model.supportedDropActions() & Qt.DropAction.MoveAction
         )
+
+    def _drag_move_to(self, y: int) -> None:
+        rect = self.view.viewport().rect()
+        position = QPointF(rect.center().x(), y)
+        mime = QMimeData()
+        mime.setData(MIME_TYPE, json.dumps([self.paths[0]]).encode("utf-8"))
+        event = QDragMoveEvent(
+            position,
+            Qt.DropAction.MoveAction,
+            mime,
+            Qt.MouseButton.LeftButton,
+            Qt.KeyboardModifier.NoModifier,
+        )
+        self.view.dragMoveEvent(event)
+        self.assertTrue(event.isAccepted())
+
+    def test_autoscroll_is_progressive_and_directional(self) -> None:
+        height = self.view.viewport().height()
+        margin = self.view._autoscroll_margin()
+        slow = self.view._autoscroll_step(height - margin + 1)
+        fast = self.view._autoscroll_step(height - 2)
+        top = self.view._autoscroll_step(2)
+        self.assertGreater(slow, 0)
+        self.assertGreater(fast, slow)
+        self.assertLess(top, 0)
+
+    def test_drag_near_bottom_autoscrolls_and_leave_stops(self) -> None:
+        self.view.resize(320, 220)
+        for _ in range(10):
+            self.app.processEvents()
+            time.sleep(0.01)
+
+        scrollbar = self.view.verticalScrollBar()
+        scrollbar.setValue(0)
+        self.assertGreater(scrollbar.maximum(), 0)
+
+        self._drag_move_to(self.view.viewport().height() - 2)
+        first_value = scrollbar.value()
+        first_row = self.view._drop_row
+        self.assertGreater(first_value, 0)
+
+        for _ in range(12):
+            self.app.processEvents()
+            time.sleep(0.05)
+        self.assertGreater(scrollbar.value(), first_value)
+        self.assertGreater(self.view._drop_row, first_row)
+
+        self.view.dragLeaveEvent(QDragLeaveEvent())
+        self.assertFalse(self.view._autoscroll_timer.isActive())
+        self.assertEqual(self.view._drop_row, -1)
+
+    def test_drag_in_center_does_not_autoscroll(self) -> None:
+        self.view.resize(320, 220)
+        for _ in range(10):
+            self.app.processEvents()
+            time.sleep(0.01)
+
+        scrollbar = self.view.verticalScrollBar()
+        scrollbar.setValue(0)
+        self._drag_move_to(self.view.viewport().height() // 2)
+        self.assertFalse(self.view._autoscroll_timer.isActive())
+        self.assertEqual(scrollbar.value(), 0)
 
     def _drop_before_row(self, sources: str | list[str], target_row: int) -> None:
         if isinstance(sources, str):

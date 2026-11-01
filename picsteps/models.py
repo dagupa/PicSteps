@@ -36,6 +36,9 @@ IsDirRole = int(Qt.ItemDataRole.UserRole) + 2
 IsImageRole = int(Qt.ItemDataRole.UserRole) + 3
 StepRole = int(Qt.ItemDataRole.UserRole) + 4
 OrderRole = int(Qt.ItemDataRole.UserRole) + 5
+TitleRole = int(Qt.ItemDataRole.UserRole) + 6
+NoteRole = int(Qt.ItemDataRole.UserRole) + 7
+HasAnnotationsRole = int(Qt.ItemDataRole.UserRole) + 8
 
 
 @dataclass
@@ -55,12 +58,14 @@ class GridModel(QAbstractListModel):
         self._items: list[GridItem] = []
         self._thumb_size = THUMB_DEFAULT
         self._folder = ""
+        self._step_infos: dict[str, dict] = {}
         provider.thumbnailReady.connect(self._on_thumbnail_ready)
         provider.thumbnailFailed.connect(self._on_thumbnail_failed)
 
     def set_content(self, content: FolderContent, prefix: str = "") -> None:
         self.beginResetModel()
         self._folder = content.folder
+        self._step_infos = {}
         items: list[GridItem] = []
         for path in content.folders:
             items.append(
@@ -92,10 +97,49 @@ class GridModel(QAbstractListModel):
             return 0
         return len(self._items)
 
+    def step_info(self, path: str) -> dict:
+        key = os.path.normcase(os.path.abspath(path))
+        return self._step_infos.get(key, {})
+
+    def set_step_infos(self, infos: dict[str, dict]) -> None:
+        self._step_infos = dict(infos)
+        if self._items:
+            self.dataChanged.emit(
+                self.index(0, 0),
+                self.index(len(self._items) - 1, 0),
+                [
+                    TitleRole,
+                    NoteRole,
+                    HasAnnotationsRole,
+                    Qt.ItemDataRole.ToolTipRole,
+                ],
+            )
+
+    def set_step_info(self, path: str, info: dict | None) -> None:
+        key = os.path.normcase(os.path.abspath(path))
+        if info:
+            self._step_infos[key] = dict(info)
+        else:
+            self._step_infos.pop(key, None)
+        row = self.row_for_path(path)
+        if row >= 0:
+            index = self.index(row, 0)
+            self.dataChanged.emit(
+                index,
+                index,
+                [
+                    TitleRole,
+                    NoteRole,
+                    HasAnnotationsRole,
+                    Qt.ItemDataRole.ToolTipRole,
+                ],
+            )
+
     def data(self, index: QModelIndex, role: int = Qt.ItemDataRole.DisplayRole):
         if not index.isValid() or not 0 <= index.row() < len(self._items):
             return None
         item = self._items[index.row()]
+        info = self.step_info(item.path) if item.is_image else {}
 
         if role == Qt.ItemDataRole.DisplayRole:
             return item.name
@@ -110,7 +154,15 @@ class GridModel(QAbstractListModel):
                 return f"Carpeta: {item.path}"
             if item.is_image:
                 step = f"Paso {item.order}" if item.step is None else f"Paso {item.step}"
-                return f"{step}\n{item.path}"
+                lines = [step]
+                title = str(info.get("title", "")).strip()
+                note = str(info.get("note", "")).strip()
+                if title:
+                    lines.append(title)
+                if note:
+                    lines.append(note)
+                lines.append(item.path)
+                return "\n".join(lines)
             return item.path
         if role == PathRole:
             return item.path
@@ -122,6 +174,12 @@ class GridModel(QAbstractListModel):
             return item.step
         if role == OrderRole:
             return item.order
+        if role == TitleRole:
+            return str(info.get("title", ""))
+        if role == NoteRole:
+            return str(info.get("note", ""))
+        if role == HasAnnotationsRole:
+            return bool(info.get("annotations"))
         return None
 
     def flags(self, index: QModelIndex) -> Qt.ItemFlag:
@@ -385,6 +443,18 @@ class ThumbnailDelegate(QStyledItemDelegate):
                 painter.setPen(palette.color(QPalette.ColorRole.HighlightedText))
                 painter.drawText(badge, Qt.AlignmentFlag.AlignCenter, text)
 
+        if is_image and bool(index.data(HasAnnotationsRole)):
+            marker = QRect(square.right() - 18, square.top() + 4, 14, 14)
+            painter.setPen(QPen(palette.color(QPalette.ColorRole.Base), 2))
+            painter.setBrush(palette.color(QPalette.ColorRole.Highlight))
+            painter.drawEllipse(marker)
+            painter.setPen(palette.color(QPalette.ColorRole.HighlightedText))
+            font = QFont(option.font)
+            font.setBold(True)
+            font.setPointSizeF(7.0)
+            painter.setFont(font)
+            painter.drawText(marker, Qt.AlignmentFlag.AlignCenter, "A")
+
         text_rect = QRect(
             rect.left() + 4,
             square.bottom() + 5,
@@ -395,7 +465,9 @@ class ThumbnailDelegate(QStyledItemDelegate):
         font.setPointSizeF(max(8.0, min(10.0, side / 18.0)))
         painter.setFont(font)
         metrics = QFontMetrics(font)
-        name = str(index.data(Qt.ItemDataRole.DisplayRole) or "")
+        name = str(index.data(TitleRole) or "").strip()
+        if not name:
+            name = str(index.data(Qt.ItemDataRole.DisplayRole) or "")
         elided = metrics.elidedText(
             name, Qt.TextElideMode.ElideMiddle, text_rect.width()
         )

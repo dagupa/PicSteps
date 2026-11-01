@@ -44,6 +44,7 @@ from PySide6.QtWidgets import (
 from . import __version__
 from . import icons
 from . import theme
+from .annotationdialog import AnnotationDialog
 from .browser import FolderTree, ThumbnailView
 from .config import (
     APP_NAME,
@@ -77,6 +78,7 @@ from .help import HelpDialog
 from .models import GridModel, IsDirRole, PathRole
 from .presentation import PresentationWindow
 from .preview import PreviewPanel
+from .stepdata import StepDataError, StepStore
 from .thumbs import ThumbnailProvider
 
 CUT_MIME = "application/x-picsteps-cut"
@@ -164,6 +166,7 @@ class MainWindow(QMainWindow):
         self._thumb_size = max(THUMB_MIN, min(THUMB_MAX, self._thumb_size))
 
         self._rotations = RotationStore()
+        self.steps = StepStore()
         self._history: list[str] = []
         self._history_index = -1
         self._undo: dict[str, list[UndoRecord]] = {}
@@ -336,6 +339,13 @@ class MainWindow(QMainWindow):
             None,
             self.save_selected_rotation,
         )
+        self.act_annotate = self._action(
+            "Anotar imagen…",
+            None,
+            self.annotate_selected,
+            tooltip="Añadir flechas, formas o texto sin modificar la imagen",
+            add_to_window=False,
+        )
         self.act_move_first = self._action(
             "Mover al principio", None, lambda: self.move_selected_to_edge(True)
         )
@@ -503,6 +513,7 @@ class MainWindow(QMainWindow):
             self.act_rotate_left,
             self.act_rotate_right,
             self.act_save_rotation,
+            self.act_annotate,
             self.act_move_first,
             self.act_move_last,
             self.act_renumber,
@@ -560,6 +571,7 @@ class MainWindow(QMainWindow):
         edit_menu.addAction(self.act_paste)
         edit_menu.addSeparator()
         edit_menu.addAction(self.act_renumber)
+        edit_menu.addAction(self.act_annotate)
         edit_menu.addSeparator()
         edit_menu.addAction(self.act_prefix)
 
@@ -611,6 +623,8 @@ class MainWindow(QMainWindow):
         self.preview.rotateRequested.connect(self.rotate_selected)
         self.preview.saveRotationRequested.connect(self.save_selected_rotation)
         self.preview.openRequested.connect(self.open_selected)
+        self.preview.annotateRequested.connect(self.annotate_selected)
+        self.preview.notesEdited.connect(self._save_notes)
         self.size_slider.valueChanged.connect(self._on_slider_changed)
         QApplication.clipboard().dataChanged.connect(self._update_actions)
 
@@ -679,6 +693,7 @@ class MainWindow(QMainWindow):
             self.navigate(text)
 
     def navigate(self, folder: str, add_history: bool = True) -> None:
+        self.preview.flush_notes()
         folder = os.path.abspath(os.path.expanduser(str(folder)))
         if not os.path.isdir(folder):
             QMessageBox.warning(
@@ -713,6 +728,8 @@ class MainWindow(QMainWindow):
                 self.provider.set_rotation(path, degrees)
 
         self.model.set_content(content, self._prefix)
+        self.steps.reload(folder)
+        self.model.set_step_infos(self.steps.infos(folder))
         self.model.set_thumb_size(self._thumb_size)
         self.view.set_thumbnail_size(self._thumb_size)
         self.path_edit.setText(folder)
@@ -760,6 +777,7 @@ class MainWindow(QMainWindow):
         self._load_folder(self._current_folder, selected)
 
     def refresh(self) -> None:
+        self.preview.flush_notes()
         if self._current_folder:
             self._load_folder(self._current_folder, self._selected_paths())
 
@@ -847,6 +865,7 @@ class MainWindow(QMainWindow):
         QApplication.clipboard().setMimeData(mime)
 
     def copy_selected(self) -> None:
+        self.preview.flush_notes()
         paths = self._selected_paths()
         if not paths:
             return
@@ -856,6 +875,7 @@ class MainWindow(QMainWindow):
         )
 
     def cut_selected(self) -> None:
+        self.preview.flush_notes()
         paths = self._selected_paths()
         if not paths:
             return
@@ -865,6 +885,7 @@ class MainWindow(QMainWindow):
         )
 
     def paste_files(self, destination: str | None = None) -> None:
+        self.preview.flush_notes()
         destination = os.path.abspath(destination or self._current_folder)
         if not destination or not os.path.isdir(destination):
             return
@@ -895,8 +916,10 @@ class MainWindow(QMainWindow):
             if not is_image_file(transfer.target):
                 continue
             if move:
+                self._move_step_data(transfer.source, transfer.target)
                 self._transfer_rotation(transfer.source, transfer.target)
             else:
+                self._copy_step_data(transfer.source, transfer.target)
                 degrees = self._rotations.get(transfer.source)
                 if degrees:
                     self._rotations.set(transfer.target, degrees)
@@ -928,9 +951,13 @@ class MainWindow(QMainWindow):
     def _on_selection_changed(self, *_args) -> None:
         paths = self._selected_paths()
         if len(paths) == 1 and is_image_file(paths[0]):
+            info = self.steps.get(paths[0])
             self.preview.set_image(
-                paths[0], self._rotations.get(paths[0])
+                paths[0],
+                self._rotations.get(paths[0]),
+                info.annotations,
             )
+            self.preview.set_notes(info.title, info.note)
         else:
             self.preview.clear()
         if paths:
@@ -973,6 +1000,7 @@ class MainWindow(QMainWindow):
             bool(self._undo.get(self._current_folder, []))
         )
         self.act_renumber.setEnabled(image_count > 0)
+        self.act_annotate.setEnabled(single_image)
         self.act_presentation.setEnabled(image_count > 0)
         self.act_back.setEnabled(self._history_index > 0)
         self.act_forward.setEnabled(
@@ -1075,6 +1103,7 @@ class MainWindow(QMainWindow):
         self._load_folder(self._current_folder, [target])
 
     def rename_selected(self) -> None:
+        self.preview.flush_notes()
         paths = self._selected_paths()
         if len(paths) != 1:
             return
@@ -1100,6 +1129,7 @@ class MainWindow(QMainWindow):
             )
             return
         if is_image_file(new_path):
+            self._move_step_data(path, new_path)
             self._transfer_rotation(path, new_path)
         self._mark_self_change()
         self._load_folder(self._current_folder, [new_path])
@@ -1148,6 +1178,7 @@ class MainWindow(QMainWindow):
             self.refresh()
 
     def _delete_paths(self, paths: list[str], navigate_after: str | None = None) -> None:
+        self.preview.flush_notes()
         if not paths:
             return
         names = "\n".join(os.path.basename(path) for path in paths[:8])
@@ -1169,6 +1200,7 @@ class MainWindow(QMainWindow):
                 self, "PicSteps", f"No se pudo eliminar:\n{exc}"
             )
             return
+        self._remove_step_data(paths)
         for path in paths:
             self._rotations.remove(path)
             self.provider.invalidate(path)
@@ -1244,6 +1276,79 @@ class MainWindow(QMainWindow):
         self.provider.set_rotation(new_path, degrees)
         self.provider.invalidate(old_path)
 
+    def _save_notes(self, path: str, title: str, note: str) -> None:
+        try:
+            self.steps.set_notes(path, title, note)
+        except StepDataError as exc:
+            self.statusBar().showMessage(
+                str(exc).replace("\n", " "),
+                6000,
+            )
+            return
+        self._mark_self_change()
+        self.model.set_step_info(path, self.steps.as_dict(path))
+
+    def annotate_selected(self) -> None:
+        path = self.preview.current_path
+        if not path or not is_image_file(path):
+            return
+        self.preview.flush_notes()
+        try:
+            dialog = AnnotationDialog(
+                path,
+                self._rotations.get(path),
+                self.steps.annotations(path),
+                self,
+            )
+        except ValueError as exc:
+            QMessageBox.critical(self, "PicSteps", str(exc))
+            return
+
+        if dialog.exec():
+            annotations = dialog.annotations()
+            try:
+                self.steps.set_annotations(path, annotations)
+            except StepDataError as exc:
+                self.statusBar().showMessage(
+                    str(exc).replace("\n", " "),
+                    6000,
+                )
+                return
+            self._mark_self_change()
+            self.model.set_step_info(path, self.steps.as_dict(path))
+            self.preview.set_annotations(annotations, self._rotations.get(path))
+            self.statusBar().showMessage("Anotaciones guardadas.", 4000)
+
+    def _move_step_data(self, old_path: str, new_path: str) -> None:
+        self._move_step_data_many([(old_path, new_path)])
+
+    def _move_step_data_many(self, moves) -> None:
+        try:
+            self.steps.move_many(moves)
+        except StepDataError as exc:
+            self.statusBar().showMessage(
+                str(exc).replace("\n", " "),
+                6000,
+            )
+
+    def _copy_step_data(self, old_path: str, new_path: str) -> None:
+        try:
+            self.steps.copy(old_path, new_path)
+        except StepDataError as exc:
+            self.statusBar().showMessage(
+                str(exc).replace("\n", " "),
+                6000,
+            )
+
+    def _remove_step_data(self, paths: list[str]) -> None:
+        try:
+            self.steps.remove_many(paths)
+        except StepDataError as exc:
+            self.statusBar().showMessage(
+                str(exc).replace("\n", " "),
+                6000,
+            )
+
     def _record_undo(self, moves) -> None:
         folder = self._current_folder
         record = UndoRecord(folder, list(moves), time.time())
@@ -1253,6 +1358,7 @@ class MainWindow(QMainWindow):
         save_undo_journal(folder, record.moves, record.timestamp)
 
     def _apply_plan(self, plan, message: str | None = None):
+        self.preview.flush_notes()
         self._mark_self_change()
         QApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
         try:
@@ -1275,6 +1381,7 @@ class MainWindow(QMainWindow):
 
         if moves:
             self._record_undo(moves)
+            self._move_step_data_many([(m.source, m.target) for m in moves])
             for move in moves:
                 self._transfer_rotation(move.source, move.target)
             targets = [move.target for move in moves]
@@ -1343,6 +1450,7 @@ class MainWindow(QMainWindow):
                 QApplication.restoreOverrideCursor()
 
         stack.pop()
+        self._move_step_data_many([(m.target, m.source) for m in moves])
         for move in moves:
             self._transfer_rotation(move.source, move.target)
         if stack:
@@ -1422,6 +1530,7 @@ class MainWindow(QMainWindow):
         self.statusBar().showMessage("Giro guardado en el archivo.", 5000)
 
     def start_presentation(self) -> None:
+        self.preview.flush_notes()
         images = self.model.image_paths()
         if not images:
             QMessageBox.information(
@@ -1431,6 +1540,9 @@ class MainWindow(QMainWindow):
         rotations = {
             path: self._rotations.get(path) for path in images
         }
+        step_infos = {
+            path: self.steps.as_dict(path) for path in images
+        }
         start_index = 0
         current = self.view.currentIndex()
         if current.isValid():
@@ -1438,7 +1550,11 @@ class MainWindow(QMainWindow):
             if current_path in images:
                 start_index = images.index(current_path)
         self._presentation = PresentationWindow(
-            images, rotations, self, start_index=start_index
+            images,
+            rotations,
+            self,
+            start_index=start_index,
+            step_infos=step_infos,
         )
         self._presentation.closed.connect(self._on_presentation_closed)
         self._presentation.start()

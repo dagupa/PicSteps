@@ -15,12 +15,15 @@ Uso básico
 - Ctrl+C y Ctrl+X copian o cortan la selección; Ctrl+V la pega.
 - F11 abre la presentación desde la imagen seleccionada.
 - Supr envía a la Papelera los archivos seleccionados o la carpeta del árbol.
+- En la vista previa puedes añadir un título y una nota a cada paso.
+- El botón Anotar abre un editor de flechas, formas y texto no destructivo.
 
 Datos y privacidad
 ------------------
 - La aplicación no envía fotos ni datos a Internet.
 - Ajustes y registro: %LOCALAPPDATA%\PicSteps
 - Giros pendientes: %LOCALAPPDATA%\PicSteps\rotations.json
+- Títulos, notas y anotaciones: archivo oculto .picsteps.json en cada carpeta.
 
 Nota
 ----

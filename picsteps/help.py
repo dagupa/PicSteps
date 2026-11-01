@@ -71,6 +71,20 @@ def build_help_html(version: str = __version__) -> str:
     girada. En JPEG se recomprime con calidad 95; en PNG y WebP el guardado
     es sin pérdida. Los GIF animados no se pueden girar.</p>
 
+    <h2>Títulos, notas y anotaciones</h2>
+    <p>En el panel de vista previa puedes escribir un <b>título</b> y una
+    <b>nota</b> para cada paso. El título sustituye al nombre del archivo en la
+    miniatura y ambos aparecen en la presentación (F11). Los cambios se guardan
+    automáticamente.</p>
+    <p>El botón <b>Anotar…</b> abre un editor para dibujar flechas, rectángulos,
+    elipses y texto sobre la imagen. Las anotaciones son <b>no destructivas</b>:
+    nunca modifican el archivo original y se muestran en la vista previa y en la
+    presentación. Las miniaturas con anotaciones llevan una marca <b>A</b>.</p>
+    <p>Los títulos, notas y anotaciones se guardan en un archivo oculto
+    <code>.picsteps.json</code> dentro de cada carpeta. Si mueves o renombras
+    imágenes con PicSteps, sus datos se trasladan con ellas. Copia ese archivo
+    junto con las fotos si quieres conservar las anotaciones en otro equipo.</p>
+
     <h2>Atajos de teclado</h2>
     <table cellspacing="0" cellpadding="5">
       <tr><td><b>F1</b></td><td>Mostrar esta ayuda</td></tr>
