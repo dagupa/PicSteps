@@ -1,0 +1,12 @@
+Modelo Silueta para eliminación de fondos
+==========================================
+
+Archivo: silueta.onnx
+Origen: https://github.com/danielgatis/rembg/releases/tag/v0.0.0
+Proyecto original: U-2-Net (https://github.com/xuebinqin/U-2-Net)
+
+Licencia: Apache License 2.0
+Texto completo: https://www.apache.org/licenses/LICENSE-2.0
+
+El modelo se distribuye como recurso del portátil de PicSteps. PicSteps
+no modifica los pesos y ejecuta la inferencia localmente en el equipo.

@@ -14,7 +14,7 @@ from PySide6.QtCore import (
     QTimer,
     Signal,
 )
-from PySide6.QtGui import QImage, QPixmap
+from PySide6.QtGui import QImage, QPalette, QPixmap
 from PySide6.QtWidgets import (
     QFrame,
     QHBoxLayout,
@@ -26,6 +26,7 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
 )
 
+from . import icons
 from .annotations import AnnotatedImageLabel
 from .fileops import format_bytes, format_mtime
 
@@ -87,6 +88,7 @@ class PreviewPanel(QFrame):
     saveRotationRequested = Signal()
     openRequested = Signal()
     annotateRequested = Signal()
+    removeBackgroundRequested = Signal()
     notesEdited = Signal(str, str, str)
 
     def __init__(self, parent=None):
@@ -157,9 +159,9 @@ class PreviewPanel(QFrame):
 
         rotate_layout = QHBoxLayout()
         rotate_layout.setSpacing(6)
-        self.rotate_left = QPushButton("Girar izq.")
+        self.rotate_left = QPushButton(self)
         self.rotate_left.setToolTip("Girar 90° a la izquierda (solo en pantalla)")
-        self.rotate_right = QPushButton("Girar der.")
+        self.rotate_right = QPushButton(self)
         self.rotate_right.setToolTip("Girar 90° a la derecha (solo en pantalla)")
         rotate_layout.addWidget(self.rotate_left)
         rotate_layout.addWidget(self.rotate_right)
@@ -167,19 +169,24 @@ class PreviewPanel(QFrame):
 
         action_layout = QHBoxLayout()
         action_layout.setSpacing(6)
-        self.save_button = QPushButton("Guardar giro")
+        self.save_button = QPushButton(self)
         self.save_button.setObjectName("accentButton")
         self.save_button.setToolTip(
             "Aplicar el giro al archivo original (pide confirmación)"
         )
-        self.open_button = QPushButton("Abrir")
+        self.open_button = QPushButton(self)
         self.open_button.setToolTip("Abrir con el visor predeterminado de Windows")
-        self.annotate_button = QPushButton("Anotar…")
+        self.annotate_button = QPushButton(self)
         self.annotate_button.setToolTip(
             "Añadir flechas, formas o texto sin modificar la imagen"
         )
+        self.remove_background_button = QPushButton(self)
+        self.remove_background_button.setToolTip(
+            "Quitar el fondo y dejar blanco (guarda una copia)"
+        )
         action_layout.addWidget(self.save_button, 1)
         action_layout.addWidget(self.annotate_button)
+        action_layout.addWidget(self.remove_background_button)
         action_layout.addWidget(self.open_button)
         layout.addLayout(action_layout)
 
@@ -187,10 +194,22 @@ class PreviewPanel(QFrame):
         self.rotate_right.clicked.connect(lambda: self.rotateRequested.emit(90))
         self.save_button.clicked.connect(self.saveRotationRequested.emit)
         self.annotate_button.clicked.connect(self.annotateRequested.emit)
+        self.remove_background_button.clicked.connect(
+            self.removeBackgroundRequested.emit
+        )
         self.open_button.clicked.connect(self.openRequested.emit)
         self.title_edit.textChanged.connect(self._on_notes_changed)
         self.note_edit.textChanged.connect(self._on_notes_changed)
 
+        self._icon_buttons = {
+            self.rotate_left: "rotate_left",
+            self.rotate_right: "rotate_right",
+            self.save_button: "save",
+            self.annotate_button: "annotate",
+            self.remove_background_button: "background",
+            self.open_button: "open",
+        }
+        self.refresh_icons()
         self._update_buttons()
 
     @property
@@ -371,6 +390,17 @@ class PreviewPanel(QFrame):
         QThreadPool.globalInstance().clear()
         QThreadPool.globalInstance().waitForDone(1500)
 
+    def refresh_icons(self, color: str | None = None) -> None:
+        if color is None:
+            color = self.palette().color(
+                QPalette.ColorRole.WindowText
+            ).name()
+        for button, name in self._icon_buttons.items():
+            button.setIcon(icons.icon(name, color))
+            button.setIconSize(QSize(18, 18))
+            button.setText("")
+            button.setAccessibleName(button.toolTip())
+
     def _update_notes_enabled(self) -> None:
         enabled = self._path is not None
         self.title_edit.setEnabled(enabled)
@@ -382,6 +412,7 @@ class PreviewPanel(QFrame):
         self.rotate_right.setEnabled(has_image)
         self.open_button.setEnabled(has_image)
         self.annotate_button.setEnabled(has_image)
+        self.remove_background_button.setEnabled(has_image)
         self.save_button.setEnabled(has_image and bool(self._rotation % 360))
         self._update_notes_enabled()
 

@@ -5,7 +5,7 @@ from __future__ import annotations
 from functools import lru_cache
 
 from PySide6.QtCore import QByteArray, QRectF, Qt
-from PySide6.QtGui import QIcon, QPainter, QPixmap
+from PySide6.QtGui import QIcon, QPainter, QPalette, QPixmap
 from PySide6.QtSvg import QSvgRenderer
 
 _SVG = (
@@ -77,6 +77,62 @@ _PATHS = {
         '<path d="M9 7H4v5"/>'
         '<path d="M4 12a8 8 0 1 0 2.3-5.7"/>'
     ),
+    "redo": (
+        '<path d="M15 7h5v5"/>'
+        '<path d="M20 12a8 8 0 1 1-2.3-5.7"/>'
+    ),
+    "move": (
+        '<path d="M12 3v18"/><path d="M3 12h18"/>'
+        '<path d="m9 6 3-3 3 3"/><path d="m9 18 3 3 3-3"/>'
+        '<path d="m6 9-3 3 3 3"/><path d="m18 9 3 3-3 3"/>'
+    ),
+    "arrow": (
+        '<path d="M5 19 19 5"/><path d="M11 5h8v8"/>'
+    ),
+    "rect": '<rect x="4" y="5" width="16" height="14" rx="1"/>',
+    "ellipse": '<ellipse cx="12" cy="12" rx="8" ry="7"/>',
+    "text": (
+        '<path d="M5 5h14"/><path d="M12 5v14"/>'
+        '<path d="M9 19h6"/>'
+    ),
+    "palette": (
+        '<path d="M12 3a9 9 0 1 0 0 18h1.5a2 2 0 0 0 0-4H13'
+        'a2 2 0 0 1 0-4h3a5 5 0 0 0 0-10z"/>'
+        '<circle cx="7.5" cy="10" r="1"/>'
+        '<circle cx="10" cy="6.8" r="1"/>'
+        '<circle cx="14" cy="6.8" r="1"/>'
+    ),
+    "line_width": (
+        '<path d="M4 6h16"/><path d="M4 12h16"/>'
+        '<path d="M4 18h16"/>'
+    ),
+    "save": (
+        '<path d="M5 3h11l3 3v15H5z"/>'
+        '<path d="M8 3v6h8V3"/><path d="M8 21v-7h8v7"/>'
+    ),
+    "cancel": '<path d="m6 6 12 12"/><path d="m18 6-12 12"/>',
+    "clear": (
+        '<path d="M4 7h16"/><path d="m6 7 1 13h10l1-13"/>'
+        '<path d="M9 7V4h6v3"/>'
+        '<path d="M10 11v6"/><path d="M14 11v6"/>'
+    ),
+    "background": (
+        '<path d="m15 4 5 5L9 20l-5-5z"/>'
+        '<path d="M5 4v3"/><path d="M3.5 5.5h3"/>'
+        '<path d="M19 14v3"/><path d="M17.5 15.5h3"/>'
+    ),
+    "rotate_left": (
+        '<path d="M4 12a8 8 0 1 1 2.3 5.7"/>'
+        '<path d="M4 5v7h7"/>'
+    ),
+    "rotate_right": (
+        '<path d="M20 12a8 8 0 1 0-2.3 5.7"/>'
+        '<path d="M20 5v7h-7"/>'
+    ),
+    "annotate": (
+        '<path d="M4 20h4L19 9a2.1 2.1 0 0 0-3-3L5 17v3z"/>'
+        '<path d="m14.5 7.5 3 3"/>'
+    ),
     "renumber": (
         '<path d="M4 6h2v4"/><path d="M4 10h4"/>'
         '<path d="M4 14h4"/><path d="M4 18h4"/>'
@@ -107,3 +163,9 @@ def icon(name: str, color: str) -> QIcon:
             painter.end()
             result.addPixmap(pixmap)
     return result
+
+
+def themed_icon(name: str, widget) -> QIcon:
+    """Devuelve un icono con el color de texto del widget."""
+    color = widget.palette().color(QPalette.ColorRole.WindowText).name()
+    return icon(name, color)

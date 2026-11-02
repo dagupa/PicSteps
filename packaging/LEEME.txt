@@ -1,4 +1,4 @@
-PicSteps 1.0.0 - Versión portátil
+PicSteps 1.1.0 - Versión portátil
 ================================
 
 1. Descomprime este ZIP en una carpeta.
@@ -16,11 +16,15 @@ Uso básico
 - F11 abre la presentación desde la imagen seleccionada.
 - Supr envía a la Papelera los archivos seleccionados o la carpeta del árbol.
 - En la vista previa puedes añadir un título y una nota a cada paso.
-- El botón Anotar abre un editor de flechas, formas y texto no destructivo.
+- El icono Anotar abre un editor de flechas, formas y texto no destructivo.
+- La herramienta Mover permite arrastrar textos y formas ya añadidos.
+- El icono Quitar fondo (Ctrl+B) aísla el objeto y guarda una copia con
+  fondo blanco, por ejemplo PASO_01_sinfondo.jpg.
 
 Datos y privacidad
 ------------------
 - La aplicación no envía fotos ni datos a Internet.
+- El modelo de IA para quitar fondos se ejecuta localmente con ONNX Runtime.
 - Ajustes y registro: %LOCALAPPDATA%\PicSteps
 - Giros pendientes: %LOCALAPPDATA%\PicSteps\rotations.json
 - Títulos, notas y anotaciones: archivo oculto .picsteps.json en cada carpeta.

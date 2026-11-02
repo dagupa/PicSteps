@@ -134,6 +134,106 @@ def make_shape(
     return {}
 
 
+def annotation_bounds(item: dict, reference: float = 1000.0) -> QRectF:
+    """Devuelve el rectángulo normalizado que ocupa una anotación."""
+    normalized = normalize_annotations([item])
+    if not normalized:
+        return QRectF()
+    item = normalized[0]
+    if item["type"] == "text":
+        reference = max(1.0, float(reference))
+        font = QFont()
+        font.setBold(True)
+        font.setPixelSize(max(9, int(item["font_size"] * reference)))
+        metrics = QFontMetricsF(font)
+        bounds = metrics.boundingRect(item["text"])
+        padding = max(3.0, reference * 0.006) / reference
+        x, y = item["points"][0]
+        return QRectF(
+            x - padding,
+            y - padding,
+            bounds.width() / reference + padding * 2,
+            bounds.height() / reference + padding * 2,
+        )
+    start, end = item["points"][0], item["points"][1]
+    left, right = sorted((start[0], end[0]))
+    top, bottom = sorted((start[1], end[1]))
+    padding = max(item["width"] / 2.0, 0.006)
+    return QRectF(
+        left - padding,
+        top - padding,
+        right - left + padding * 2,
+        bottom - top + padding * 2,
+    )
+
+
+def _distance_to_segment(
+    point: tuple[float, float],
+    start: tuple[float, float],
+    end: tuple[float, float],
+) -> float:
+    px, py = point
+    x1, y1 = start
+    x2, y2 = end
+    dx, dy = x2 - x1, y2 - y1
+    length_squared = dx * dx + dy * dy
+    if length_squared <= 1e-12:
+        return math.hypot(px - x1, py - y1)
+    t = max(0.0, min(1.0, ((px - x1) * dx + (py - y1) * dy) / length_squared))
+    return math.hypot(px - (x1 + t * dx), py - (y1 + t * dy))
+
+
+def hit_test_annotations(
+    annotations: Iterable[dict],
+    point: tuple[float, float],
+    tolerance: float = 0.012,
+    reference: float = 1000.0,
+) -> int:
+    """Devuelve el índice de la anotación bajo el punto, o -1."""
+    items = normalize_annotations(list(annotations))
+    for index in range(len(items) - 1, -1, -1):
+        item = items[index]
+        if item["type"] == "arrow":
+            start, end = item["points"][0], item["points"][1]
+            distance = _distance_to_segment(point, start, end)
+            if distance <= max(item["width"] / 2.0, tolerance):
+                return index
+            continue
+        bounds = annotation_bounds(item, reference).adjusted(
+            -tolerance,
+            -tolerance,
+            tolerance,
+            tolerance,
+        )
+        if bounds.contains(QPointF(point[0], point[1])):
+            return index
+    return -1
+
+
+def translate_annotation(item: dict, dx: float, dy: float) -> dict:
+    """Desplaza una anotación sin sacarla de los límites de la imagen."""
+    normalized = normalize_annotations([item])
+    if not normalized:
+        return {}
+    item = normalized[0]
+    points = item["points"]
+    if item["type"] == "text":
+        x, y = points[0]
+        dx = _clamp(dx, -x, 1.0 - x)
+        dy = _clamp(dy, -y, 1.0 - y)
+    else:
+        xs = [point[0] for point in points]
+        ys = [point[1] for point in points]
+        dx = _clamp(dx, -min(xs), 1.0 - max(xs))
+        dy = _clamp(dy, -min(ys), 1.0 - max(ys))
+    result = dict(item)
+    result["points"] = [
+        (_clamp(x + dx, 0.0, 1.0), _clamp(y + dy, 0.0, 1.0))
+        for x, y in points
+    ]
+    return result
+
+
 def rotate_point(
     point: tuple[float, float],
     rotation: int,
@@ -267,23 +367,53 @@ def paint_annotations(
             )
             painter.setFont(font)
             metrics = QFontMetricsF(font)
-            text = item["text"]
-            bounds = metrics.boundingRect(text)
-            padding = max(3.0, shortest * 0.006)
-            background = QRectF(
-                points[0].x() - padding,
-                points[0].y() - padding,
-                bounds.width() + padding * 2,
-                bounds.height() + padding * 2,
-            )
-            painter.setPen(Qt.PenStyle.NoPen)
-            painter.setBrush(QColor(0, 0, 0, 165))
-            painter.drawRoundedRect(background, padding, padding)
             painter.setPen(color)
             painter.drawText(
                 QPointF(points[0].x(), points[0].y() + metrics.ascent()),
-                text,
+                item["text"],
             )
+    painter.restore()
+
+
+def paint_selection(
+    painter: QPainter,
+    image_rect: QRectF,
+    item: dict,
+    rotation: int = 0,
+) -> None:
+    """Dibuja el contorno discontinuo de la anotación seleccionada."""
+    shortest = min(image_rect.width(), image_rect.height())
+    bounds = annotation_bounds(item, shortest)
+    if bounds.isEmpty():
+        return
+    corners = (
+        (bounds.left(), bounds.top()),
+        (bounds.right(), bounds.top()),
+        (bounds.right(), bounds.bottom()),
+        (bounds.left(), bounds.bottom()),
+    )
+    polygon = QPolygonF(
+        [_map_point(point, image_rect, rotation) for point in corners]
+    )
+    painter.save()
+    painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+    painter.setBrush(Qt.BrushStyle.NoBrush)
+    painter.setPen(
+        QPen(
+            QColor(0, 0, 0, 190),
+            3.0,
+            Qt.PenStyle.DashLine,
+        )
+    )
+    painter.drawPolygon(polygon)
+    painter.setPen(
+        QPen(
+            QColor(255, 255, 255, 230),
+            1.2,
+            Qt.PenStyle.DashLine,
+        )
+    )
+    painter.drawPolygon(polygon)
     painter.restore()
 
 

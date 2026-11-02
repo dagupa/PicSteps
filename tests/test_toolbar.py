@@ -135,12 +135,29 @@ class ToolbarIconTests(unittest.TestCase):
         window = self._window()
         window.navigate(str(source))
         self.assertFalse(window.act_annotate.isEnabled())
+        self.assertFalse(window.act_remove_background.isEnabled())
 
         image = source / "paso-01.jpg"
         image.write_bytes(b"foto")
         window.refresh()
         window.view.select_paths([str(image)])
         self.assertTrue(window.act_annotate.isEnabled())
+        self.assertTrue(window.act_remove_background.isEnabled())
+
+    def test_preview_buttons_are_icon_only(self):
+        window = self._window()
+        window.navigate(self.temp_dir)
+        for button in (
+            window.preview.rotate_left,
+            window.preview.rotate_right,
+            window.preview.save_button,
+            window.preview.annotate_button,
+            window.preview.remove_background_button,
+            window.preview.open_button,
+        ):
+            self.assertEqual(button.text(), "")
+            self.assertFalse(button.icon().isNull())
+            self.assertTrue(button.toolTip())
 
     def test_cut_and_paste_files(self):
         source, destination = self._folders()

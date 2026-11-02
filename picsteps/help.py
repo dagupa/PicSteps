@@ -63,11 +63,10 @@ def build_help_html(version: str = __version__) -> str:
     <code>(copia)</code> o un número para no sobrescribir nada.</p>
 
     <h2>Girar y guardar imágenes</h2>
-    <p>Los botones <b>Girar izq.</b> y <b>Girar der.</b> giran la vista previa
-    y la miniatura, pero <b>no modifican el archivo</b>. El giro se recuerda
-    para esa imagen.</p>
-    <p>Si quieres corregir la orientación de forma permanente, pulsa
-    <b>Guardar giro</b>. PicSteps pedirá confirmación y escribirá la imagen
+    <p>Los botones con flechas circulares giran la vista previa y la miniatura,
+    pero <b>no modifican el archivo</b>. El giro se recuerda para esa imagen.</p>
+    <p>Si quieres corregir la orientación de forma permanente, pulsa el icono
+    de <b>Guardar giro</b>. PicSteps pedirá confirmación y escribirá la imagen
     girada. En JPEG se recomprime con calidad 95; en PNG y WebP el guardado
     es sin pérdida. Los GIF animados no se pueden girar.</p>
 
@@ -76,14 +75,28 @@ def build_help_html(version: str = __version__) -> str:
     <b>nota</b> para cada paso. El título sustituye al nombre del archivo en la
     miniatura y ambos aparecen en la presentación (F11). Los cambios se guardan
     automáticamente.</p>
-    <p>El botón <b>Anotar…</b> abre un editor para dibujar flechas, rectángulos,
-    elipses y texto sobre la imagen. Las anotaciones son <b>no destructivas</b>:
-    nunca modifican el archivo original y se muestran en la vista previa y en la
-    presentación. Las miniaturas con anotaciones llevan una marca <b>A</b>.</p>
+    <p>El icono de <b>Anotar</b> abre un editor con herramientas de flecha,
+    rectángulo, elipse y texto. La herramienta <b>Mover</b> permite seleccionar
+    una anotación y arrastrarla a otra posición; también puedes ajustarla con
+    las flechas del teclado o eliminarla con <b>Supr</b>. Las anotaciones son
+    <b>no destructivas</b>: nunca modifican el archivo original y se muestran
+    en la vista previa y en la presentación. Las miniaturas con anotaciones
+    llevan una marca <b>A</b>.</p>
     <p>Los títulos, notas y anotaciones se guardan en un archivo oculto
     <code>.picsteps.json</code> dentro de cada carpeta. Si mueves o renombras
     imágenes con PicSteps, sus datos se trasladan con ellas. Copia ese archivo
     junto con las fotos si quieres conservar las anotaciones en otro equipo.</p>
+
+    <h2>Quitar el fondo</h2>
+    <p>El icono de <b>Quitar fondo</b> (o <b>Ctrl + B</b>) aísla el objeto
+    principal y deja el resto en blanco. La primera vez se carga un modelo de
+    IA local incluido en el portátil; el procesamiento ocurre en tu equipo y
+    <b>la foto no se envía a Internet</b>.</p>
+    <p>Antes de guardar verás una vista previa. Al aceptar se crea una copia
+    junto al original con el sufijo <code>_sinfondo</code>, por ejemplo
+    <code>PASO_01_sinfondo.jpg</code>. El archivo original no se modifica.
+    Si hay un giro sin guardar, guárdalo antes para que la copia mantenga la
+    orientación correcta.</p>
 
     <h2>Atajos de teclado</h2>
     <table cellspacing="0" cellpadding="5">
@@ -97,6 +110,7 @@ def build_help_html(version: str = __version__) -> str:
       <tr><td><b>Ctrl + X</b></td><td>Cortar los archivos o carpetas seleccionados</td></tr>
       <tr><td><b>Ctrl + V</b></td><td>Pegar en la carpeta actual</td></tr>
       <tr><td><b>Ctrl + Z</b></td><td>Deshacer el último renombrado</td></tr>
+      <tr><td><b>Ctrl + B</b></td><td>Quitar el fondo de la imagen seleccionada</td></tr>
       <tr><td><b>Ctrl + T</b></td><td>Alternar entre tema claro y oscuro</td></tr>
       <tr><td><b>Ctrl + rueda</b></td><td>Cambiar el tamaño de las miniaturas</td></tr>
       <tr><td><b>Alt + Izquierda</b></td><td>Ir atrás</td></tr>
@@ -121,8 +135,10 @@ def build_help_html(version: str = __version__) -> str:
 
     <h2>Acerca de</h2>
     <p>PicSteps {version} · Aplicación local para Windows. No envía fotos ni
-    datos a Internet. El control de versiones del programa se gestiona con Git
-    y versionado semántico.</p>
+    datos a Internet. El modelo Silueta para quitar fondos se ejecuta
+    localmente con ONNX Runtime y se distribuye bajo licencia Apache 2.0.
+    El control de versiones del programa se gestiona con Git y versionado
+    semántico.</p>
     """
 
 

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import sys
 
 APP_NAME = "PicSteps"
 ORG_NAME = "PicSteps"
@@ -24,6 +25,15 @@ THUMB_DEFAULT = 180
 THUMB_STEP = 10
 
 MAX_UNDO_LEVELS = 20
+
+
+def resource_path(*parts: str) -> str:
+    """Ruta a un recurso incluido en el ejecutable o en el repositorio."""
+    base = getattr(sys, "_MEIPASS", None)
+    if base:
+        return os.path.join(base, *parts)
+    root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    return os.path.join(root, *parts)
 
 
 def app_data_dir() -> str:

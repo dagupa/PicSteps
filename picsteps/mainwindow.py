@@ -45,6 +45,7 @@ from . import __version__
 from . import icons
 from . import theme
 from .annotationdialog import AnnotationDialog
+from .backgrounddialog import BackgroundDialog
 from .browser import FolderTree, ThumbnailView
 from .config import (
     APP_NAME,
@@ -346,6 +347,13 @@ class MainWindow(QMainWindow):
             tooltip="Añadir flechas, formas o texto sin modificar la imagen",
             add_to_window=False,
         )
+        self.act_remove_background = self._action(
+            "Quitar fondo…",
+            "Ctrl+B",
+            self.remove_selected_background,
+            tooltip="Aislar el objeto y guardar una copia con fondo blanco",
+            add_to_window=False,
+        )
         self.act_move_first = self._action(
             "Mover al principio", None, lambda: self.move_selected_to_edge(True)
         )
@@ -395,9 +403,12 @@ class MainWindow(QMainWindow):
             self.act_renumber: "renumber",
             self.act_presentation: "presentation",
             self.act_help: "help",
+            self.act_remove_background: "background",
         }
         for action, name in icon_actions.items():
             action.setIcon(icons.icon(name, color))
+        if hasattr(self, "preview"):
+            self.preview.refresh_icons(color)
         theme_color = (
             theme.DARK["accent_text"] if self.act_theme.isChecked() else color
         )
@@ -514,6 +525,7 @@ class MainWindow(QMainWindow):
             self.act_rotate_right,
             self.act_save_rotation,
             self.act_annotate,
+            self.act_remove_background,
             self.act_move_first,
             self.act_move_last,
             self.act_renumber,
@@ -572,6 +584,7 @@ class MainWindow(QMainWindow):
         edit_menu.addSeparator()
         edit_menu.addAction(self.act_renumber)
         edit_menu.addAction(self.act_annotate)
+        edit_menu.addAction(self.act_remove_background)
         edit_menu.addSeparator()
         edit_menu.addAction(self.act_prefix)
 
@@ -624,6 +637,9 @@ class MainWindow(QMainWindow):
         self.preview.saveRotationRequested.connect(self.save_selected_rotation)
         self.preview.openRequested.connect(self.open_selected)
         self.preview.annotateRequested.connect(self.annotate_selected)
+        self.preview.removeBackgroundRequested.connect(
+            self.remove_selected_background
+        )
         self.preview.notesEdited.connect(self._save_notes)
         self.size_slider.valueChanged.connect(self._on_slider_changed)
         QApplication.clipboard().dataChanged.connect(self._update_actions)
@@ -1001,6 +1017,7 @@ class MainWindow(QMainWindow):
         )
         self.act_renumber.setEnabled(image_count > 0)
         self.act_annotate.setEnabled(single_image)
+        self.act_remove_background.setEnabled(single_image)
         self.act_presentation.setEnabled(image_count > 0)
         self.act_back.setEnabled(self._history_index > 0)
         self.act_forward.setEnabled(
@@ -1318,6 +1335,32 @@ class MainWindow(QMainWindow):
             self.model.set_step_info(path, self.steps.as_dict(path))
             self.preview.set_annotations(annotations, self._rotations.get(path))
             self.statusBar().showMessage("Anotaciones guardadas.", 4000)
+
+    def remove_selected_background(self) -> None:
+        path = self.preview.current_path
+        if not path or not is_image_file(path):
+            return
+        if self._rotations.get(path):
+            QMessageBox.information(
+                self,
+                "Quitar fondo",
+                "Hay un giro sin guardar en esta imagen.\n\n"
+                "Guarda el giro antes de quitar el fondo para que la copia "
+                "mantenga la orientación correcta.",
+            )
+            return
+        self.preview.flush_notes()
+        dialog = BackgroundDialog(path, self)
+        if not dialog.exec() or not dialog.saved_path:
+            return
+        target = dialog.saved_path
+        self._copy_step_data(path, target)
+        self._mark_self_change()
+        self._load_folder(self._current_folder, [target])
+        self.statusBar().showMessage(
+            f"Copia sin fondo guardada: {os.path.basename(target)}",
+            6000,
+        )
 
     def _move_step_data(self, old_path: str, new_path: str) -> None:
         self._move_step_data_many([(old_path, new_path)])

@@ -36,5 +36,9 @@ $RECYCLE.BIN/
 *.tmp
 .picsteps_tmp_*
 
+# Modelos descargados para el portátil
+packaging/models/*.onnx
+packaging/models/*.tmp
+
 # Pruebas locales
 FOTOS TEST/
