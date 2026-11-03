@@ -64,6 +64,8 @@ if (Test-Path -LiteralPath $buildRoot) {
     --collect-all onnxruntime `
     --add-data "$modelPath;models" `
     --add-data "$modelLicense;models" `
+    --add-data "$root\assets\picsteps.png;assets" `
+    --add-data "$root\assets\picsteps.ico;assets" `
     (Join-Path $root "main.py")
 if ($LASTEXITCODE -ne 0) {
     throw "PyInstaller falló con código $LASTEXITCODE."

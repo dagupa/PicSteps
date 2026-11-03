@@ -5,13 +5,16 @@ import os
 import sys
 import traceback
 
-from PySide6.QtCore import QRect, Qt
-from PySide6.QtGui import QColor, QFont, QIcon, QPainter, QPixmap
-from PySide6.QtWidgets import QApplication, QMessageBox
+from PySide6.QtCore import Qt, QTimer
+from PySide6.QtGui import QIcon, QPixmap
+from PySide6.QtWidgets import QApplication, QMessageBox, QSplashScreen
 
 from picsteps import APP_NAME, __version__
-from picsteps.config import ORG_NAME, log_path
+from picsteps.config import ORG_NAME, log_path, resource_path
 from picsteps.mainwindow import MainWindow
+
+SPLASH_DURATION_MS = 1000
+SPLASH_SIZE = 460
 
 
 def setup_logging() -> None:
@@ -24,20 +27,26 @@ def setup_logging() -> None:
 
 
 def build_icon() -> QIcon:
-    pixmap = QPixmap(64, 64)
-    pixmap.fill(Qt.GlobalColor.transparent)
-    painter = QPainter(pixmap)
-    painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
-    painter.setPen(Qt.PenStyle.NoPen)
-    painter.setBrush(QColor("#2f6feb"))
-    painter.drawRoundedRect(QRect(4, 4, 56, 56), 14, 14)
-    painter.setPen(QColor("#ffffff"))
-    font = QFont("Segoe UI", 22)
-    font.setBold(True)
-    painter.setFont(font)
-    painter.drawText(QRect(4, 4, 56, 56), Qt.AlignmentFlag.AlignCenter, "PS")
-    painter.end()
-    return QIcon(pixmap)
+    icon = QIcon(resource_path("assets", "picsteps.png"))
+    if icon.isNull():
+        icon = QIcon(resource_path("assets", "picsteps.ico"))
+    return icon
+
+
+def build_splash() -> QSplashScreen:
+    pixmap = QPixmap(resource_path("assets", "picsteps.png"))
+    if pixmap.isNull():
+        pixmap = QPixmap(resource_path("assets", "picsteps.ico"))
+    if not pixmap.isNull():
+        pixmap = pixmap.scaled(
+            SPLASH_SIZE,
+            SPLASH_SIZE,
+            Qt.AspectRatioMode.KeepAspectRatio,
+            Qt.TransformationMode.SmoothTransformation,
+        )
+    splash = QSplashScreen(pixmap)
+    splash.setWindowFlag(Qt.WindowType.WindowStaysOnTopHint, True)
+    return splash
 
 
 def install_exception_hook() -> None:
@@ -75,8 +84,11 @@ def main() -> int:
     app.setWindowIcon(build_icon())
     install_exception_hook()
 
+    splash = build_splash()
+    splash.show()
+    app.processEvents()
+
     window = MainWindow()
-    window.show()
 
     if len(sys.argv) > 1:
         candidate = sys.argv[1]
@@ -84,6 +96,12 @@ def main() -> int:
             window.navigate(candidate)
         elif os.path.isfile(candidate):
             window.navigate(os.path.dirname(os.path.abspath(candidate)))
+
+    def reveal_window() -> None:
+        window.show()
+        splash.finish(window)
+
+    QTimer.singleShot(SPLASH_DURATION_MS, reveal_window)
 
     return app.exec()
 
